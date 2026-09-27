@@ -1,4 +1,16 @@
-# cuddly-giggle — `alos2mc`: the whole Earth in Minecraft at 1:30
+# cuddly-giggle — the whole Earth in Minecraft at 1:30
+
+This repository has two ways to play the Earth from JAXA's AW3D30 data:
+
+* **[`mod/`](mod/README.md) — ALOS Earth, a Fabric 1.21.1 mod (beta, the
+  main project).** It adds a world type that generates the globe on the fly
+  as you explore, with "Minecraft‑like" exaggerated relief, varied biomes,
+  vanilla ores, trees and structures, and no caves. Nothing is
+  pre‑generated, so there are no terabytes to build.
+* **`alos2mc/` — a Python pre‑generator** (described below) that writes a
+  vanilla world with true‑scale terrain. It is also the reference the mod's
+  projection and data readers are tested against. Its terrain rules are the
+  older, realistic ones; they don't yet match the mod's style.
 
 `alos2mc` turns JAXA's **ALOS World 3D – 30 m (AW3D30)** global elevation
 model into a **Minecraft Java Edition** world at **1 block ≈ 30 m**,
