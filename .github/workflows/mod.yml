@@ -1,0 +1,95 @@
+name: ALOS Earth mod
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mod
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Make test data (Python reference implementation)
+        run: |
+          python -m pip install --quiet numpy tifffile imagecodecs
+          python scripts/make_testdata.py "$GITHUB_WORKSPACE/mod/build/testdata"
+
+      - name: Resolve Fabric versions for Minecraft 1.21.1
+        run: |
+          set -euo pipefail
+          meta=$(curl -sSf https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml)
+          fabric=$(echo "$meta" | grep -oP '<version>\K[^<]*\+1\.21\.1(?=</version>)' | sort -V | tail -1)
+          loader=$(curl -sSf https://maven.fabricmc.net/net/fabricmc/fabric-loader/maven-metadata.xml | grep -oP '<release>\K[^<]*')
+          echo "Resolved fabric-api $fabric, fabric-loader $loader (pinned: $(grep -E '^(fabric|loader)_version' gradle.properties | tr '\n' ' '))"
+          echo "FABRIC_VERSION=$fabric" >> "$GITHUB_ENV"
+          echo "LOADER_VERSION=$loader" >> "$GITHUB_ENV"
+
+      - name: Build and run core tests
+        env:
+          ALOSEARTH_TESTDATA: ${{ github.workspace }}/mod/build/testdata
+        run: ./gradlew build --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION"
+
+      - name: Prepare a dedicated server with an ALOS Earth world
+        run: |
+          mkdir -p run/config
+          echo "eula=true" > run/eula.txt
+          cat > run/server.properties <<'PROPS'
+          level-type=alosearth\:earth
+          online-mode=false
+          spawn-protection=0
+          view-distance=4
+          simulation-distance=4
+          sync-chunk-writes=false
+          PROPS
+          sed -i 's/^ *//' run/server.properties
+          d="$GITHUB_WORKSPACE/mod/build/testdata/data"
+          cat > run/config/alosearth.json <<JSON
+          {
+            "aw3d30": ["$d/aw3d30"],
+            "fill_dem": [],
+            "bathymetry": ["$d/gebco.tif"],
+            "climate": ["$d/climate"],
+            "cache_mb": 256
+          }
+          JSON
+
+      - name: Run the in-game self-test on a real server
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" || true
+          cat run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+
+      - name: Upload server log and self-test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-logs
+          path: |
+            mod/run/logs/latest.log
+            mod/run/alosearth-selftest.txt
+          if-no-files-found: ignore
+
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: alos-earth-mod
+          path: mod/build/libs/*.jar

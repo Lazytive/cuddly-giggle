@@ -5,6 +5,10 @@ __pycache__/
 build/
 dist/
 # generated worlds and downloaded data
-worlds/
-data/
+/worlds/
+/data/
 *.mca
+# mod build output and dev server
+mod/build/
+mod/.gradle/
+mod/run/
