@@ -19,11 +19,19 @@ import java.util.zip.ZipFile;
  * {@link SegmentCache}, so huge global grids never have to fit in memory.
  */
 public final class GeoTiff implements AutoCloseable {
-    /** Where the bytes come from: a file, or an entry of a zip file (read into memory). */
-    public record Source(Path path, String zipEntry) {
+    /**
+     * Where the bytes come from: a file, an entry of a zip file (read into
+     * memory), or a remote cloud-optimised GeoTIFF read with range requests
+     * and cached under {@code path}.
+     */
+    public record Source(Path path, String zipEntry, java.net.URI url, java.net.http.HttpClient http) {
+        public Source(Path path, String zipEntry) {
+            this(path, zipEntry, null, null);
+        }
+
         @Override
         public String toString() {
-            return zipEntry == null ? path.toString() : path + "!" + zipEntry;
+            return url != null ? url.toString() : zipEntry == null ? path.toString() : path + "!" + zipEntry;
         }
     }
 
@@ -37,10 +45,13 @@ public final class GeoTiff implements AutoCloseable {
     private final long[] offsets, byteCounts;
     private final ByteOrder order;
     private ByteBuffer memory; // zip entries are held in memory; files are opened per read
+    private RemoteBytes remote;
 
     public GeoTiff(Source source) throws IOException {
         this.source = source;
-        if (source.zipEntry() != null) {
+        if (source.url() != null) {
+            remote = new RemoteBytes(source.url(), source.path(), source.http());
+        } else if (source.zipEntry() != null) {
             try (ZipFile z = new ZipFile(source.path().toFile())) {
                 var entry = z.getEntry(source.zipEntry());
                 if (entry == null) throw new IOException("missing zip entry " + source);
@@ -225,6 +236,7 @@ public final class GeoTiff implements AutoCloseable {
     }
 
     private ByteBuffer read(long off, int len) throws IOException {
+        if (remote != null) return remote.read(off, len).order(ByteOrder.BIG_ENDIAN);
         ByteBuffer mem = memory;
         if (source.zipEntry() != null) {
             if (mem == null) throw new IOException("closed: " + source);

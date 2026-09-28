@@ -84,6 +84,28 @@ jobs:
           cat run/alosearth-selftest.txt
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
 
+      - name: Self-test a fresh world using only auto-downloaded elevation
+        env:
+          ALOSEARTH_SELFTEST: auto
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt
+          cat > run/config/alosearth.json <<JSON
+          {
+            "aw3d30": [],
+            "fill_dem": [],
+            "bathymetry": [],
+            "climate": [],
+            "auto_download": true,
+            "cache_mb": 256
+          }
+          JSON
+          start=$(date +%s)
+          timeout 900 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          echo "world creation + checks took $(( $(date +%s) - start )) s"
+          grep -h "Elevation download" run/logs/latest.log | tail -5 || true
+          cat run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+
       - name: Upload server log and self-test report
         if: always()
         uses: actions/upload-artifact@v4

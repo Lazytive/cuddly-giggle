@@ -29,14 +29,16 @@ final class SelfTest {
     }
 
     static boolean enabled() {
-        return "1".equals(System.getenv("ALOSEARTH_SELFTEST"));
+        String v = System.getenv("ALOSEARTH_SELFTEST");
+        return "1".equals(v) || "auto".equals(v);
     }
 
     static void run(MinecraftServer server) {
         List<String> errors = new ArrayList<>();
         List<String> notes = new ArrayList<>();
         try {
-            check(server, errors, notes);
+            if ("auto".equals(System.getenv("ALOSEARTH_SELFTEST"))) checkAutoDownload(server, errors, notes);
+            else check(server, errors, notes);
         } catch (Throwable e) {
             AlosEarth.LOG.error("self-test crashed", e);
             errors.add("crash: " + e);
@@ -56,6 +58,28 @@ final class SelfTest {
         } else {
             Runtime.getRuntime().halt(1);
         }
+    }
+
+    /** A world with no installed data: land must come from the automatic download. */
+    private static void checkAutoDownload(MinecraftServer server, List<String> errors, List<String> notes) {
+        ServerLevel level = server.overworld();
+        if (!(level.getChunkSource().getGenerator() instanceof EarthChunkGenerator gen)) {
+            errors.add("overworld is not ALOS Earth");
+            return;
+        }
+        Terrain t = gen.terrain();
+        if (t.data.autoDem == null) errors.add("auto-download is off");
+        BlockPos spawn = level.getSharedSpawnPos();
+        notes.add("spawn " + spawn + " at " + t.describe(spawn.getX(), spawn.getZ()));
+        if (t.surface(spawn.getX(), spawn.getZ()) <= t.settings.seaLevel()) errors.add("spawn is not on land");
+        double[] p = new double[2];
+        t.projection.forward(138.7274, 35.3606, p); // Mt Fuji
+        int x = (int) Math.floor(p[0]), z = (int) Math.floor(p[1]);
+        level.getChunk(x >> 4, z >> 4);
+        int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
+        notes.add("Fuji summit column top y=" + top);
+        if (top < t.settings.seaLevel() + 200) errors.add("Fuji is not a mountain: top " + top);
+        notes.add("data: " + t.data.describe());
     }
 
     private static void check(MinecraftServer server, List<String> errors, List<String> notes) {

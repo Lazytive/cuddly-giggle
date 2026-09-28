@@ -4,11 +4,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.NoSuchFileException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -20,8 +18,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Elevation downloaded on demand: the Copernicus GLO-30 DEM (30 m, free,
- * openly hosted on AWS) is fetched one 1x1 degree tile at a time the first
- * time an area is generated, and kept in a local folder. Used wherever no
+ * openly hosted on AWS as cloud-optimised GeoTIFFs). Only the ~2 MB blocks
+ * of each 1x1 degree tile that an area needs are fetched, the first time it
+ * is generated, and kept in a local folder. Used wherever no
  * AW3D30 or fill-DEM tile is installed, so a new world has land straight
  * away. Tiles over open ocean do not exist and are remembered as such.
  */
@@ -90,37 +89,38 @@ public final class AutoDem {
         Path none = dir.resolve(name + ".none");
         try {
             if (Files.exists(none)) return null;
-            if (!Files.exists(file)) {
-                Files.createDirectories(dir);
-                Path part = dir.resolve(name + ".part");
-                HttpRequest req = HttpRequest.newBuilder(URI.create(BASE + name + "/" + name + ".tif"))
-                    .timeout(Duration.ofMinutes(5)).GET().build();
-                HttpResponse<Path> resp = http.send(req, HttpResponse.BodyHandlers.ofFile(part));
-                int code = resp.statusCode();
-                if (code == 404 || code == 403) { // no tile: open ocean
-                    Files.deleteIfExists(part);
-                    Files.writeString(none, "no Copernicus tile\n");
-                    missing.incrementAndGet();
-                    return null;
-                }
-                if (code != 200) {
-                    Files.deleteIfExists(part);
-                    throw new IOException("HTTP " + code + " for " + name);
-                }
-                Files.move(part, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-                downloaded.incrementAndGet();
+            if (Files.exists(file)) { // a whole tile downloaded earlier (or put there by hand)
+                return new Rasters.Raster(new GeoTiff(new GeoTiff.Source(file, null)), cache);
             }
-            return new Rasters.Raster(new GeoTiff(new GeoTiff.Source(file, null)), cache);
+            URI url = URI.create(BASE + name + "/" + name + ".tif");
+            try {
+                GeoTiff t = new GeoTiff(new GeoTiff.Source(dir.resolve(name), null, url, http));
+                downloaded.incrementAndGet();
+                return new Rasters.Raster(t, cache);
+            } catch (NoSuchFileException e) { // no tile: open ocean
+                Files.createDirectories(dir);
+                Files.writeString(none, "no Copernicus tile\n");
+                missing.incrementAndGet();
+                return null;
+            }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new UncheckedIOException(new IOException("interrupted"));
         }
     }
 
+    /** Bytes fetched from the network by all instances (for status and tests). */
+    public static final java.util.concurrent.atomic.AtomicLong BYTES_FETCHED = new java.util.concurrent.atomic.AtomicLong();
+
+    /** Where progress messages go (the mod points this at its logger). */
+    public static volatile java.util.function.Consumer<String> logger = s -> { };
+
+    static void log(String message) {
+        logger.accept(message);
+    }
+
     public String describe() {
-        return "auto-download " + downloaded.get() + " tiles fetched this session, " + missing.get() + " ocean tiles"
+        return String.format("auto-download on (%d tiles in use, %d ocean tiles, %.1f MB fetched this session)",
+            downloaded.get(), missing.get(), BYTES_FETCHED.get() / 1e6)
             + (failures.get() > 0 ? ", " + failures.get() + " failed (" + lastError + ")" : "");
     }
 }

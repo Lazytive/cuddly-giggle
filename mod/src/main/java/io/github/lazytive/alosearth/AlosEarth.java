@@ -29,6 +29,7 @@ public final class AlosEarth implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        io.github.lazytive.alosearth.core.AutoDem.logger = msg -> LOG.info("Elevation download: {}", msg);
         Registry.register(BuiltInRegistries.CHUNK_GENERATOR, id("earth"), EarthChunkGenerator.CODEC);
         Registry.register(BuiltInRegistries.BIOME_SOURCE, id("earth"), EarthBiomeSource.CODEC);
 

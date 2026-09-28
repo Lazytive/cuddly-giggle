@@ -97,14 +97,19 @@ final class TerrainTests {
         if ("1".equals(System.getenv("ALOSEARTH_NET"))) {
             run("auto-download fetches real elevation", () -> {
                 Path dir = java.nio.file.Files.createTempDirectory("alosearth-auto");
+                long before = AutoDem.BYTES_FETCHED.get();
                 AutoDem auto = new AutoDem(dir, new Rasters.SegmentCache(128L << 20));
                 double fuji = auto.bilinear(138.7274, 35.3606);
                 check(fuji > 3500 && fuji < 3900, "Fuji summit " + fuji);
                 check(Double.isNaN(auto.bilinear(-140.2, 0.3)), "open Pacific should have no tile");
+                long fetched = AutoDem.BYTES_FETCHED.get() - before;
                 check(auto.downloaded.get() == 1 && auto.missing.get() == 1, auto.describe());
+                check(fetched > 0 && fetched < 6_000_000, "fetched " + fetched + " bytes (should be a block, not the whole tile)");
                 // a second instance reuses the cached files without downloading
                 AutoDem again = new AutoDem(dir, new Rasters.SegmentCache(128L << 20));
-                check(Math.abs(again.bilinear(138.7274, 35.3606) - fuji) < 1e-6 && again.downloaded.get() == 0, "cache");
+                long mark = AutoDem.BYTES_FETCHED.get();
+                check(Math.abs(again.bilinear(138.7274, 35.3606) - fuji) < 1e-6, "cached value differs");
+                check(AutoDem.BYTES_FETCHED.get() == mark, "second run should not download");
             });
         }
 
