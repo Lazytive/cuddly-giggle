@@ -269,6 +269,11 @@ public final class Terrain {
 
     private int deep(int x, int y, int z) {
         int minY = settings.bottomY();
+        if (settings.minecraftFeel()) { // no bedrock: dig through the bottom and you come out on the far side of the Earth
+            if (y < 0) return DEEPSLATE;
+            if (y < 8 && Math.floorMod(hash(x, y, z) >> 8, 8) < 8 - y) return DEEPSLATE;
+            return STONE;
+        }
         if (y <= minY) return BEDROCK;
         int k = y - minY;
         if (k < 5 && Math.floorMod(hash(x, y, z), 5) < 5 - k) return BEDROCK;

@@ -36,6 +36,7 @@ public final class AlosEarth implements ModInitializer {
             if (level.getChunkSource().getGenerator() instanceof EarthChunkGenerator gen) {
                 SeamHandler.tick(level);
                 LayerHandler.tick(level, gen);
+                ThroughTheEarth.tick(level, gen);
             }
         });
         CommandRegistrationCallback.EVENT.register((dispatcher, registries, environment) -> EarthCommands.register(dispatcher));

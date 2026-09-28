@@ -49,6 +49,13 @@ character on top of the real shape. It's in every world type:
   so plains get snow from about 3 km up, taiga from about 1.3 km. The
   snow line and tree line follow the real ones (the Alps: snow line about
   2,900 m, tree line about 2,000 m).
+* **Through the Earth:** there is no bedrock at the bottom of the world.
+  Dig or fall out of the bottom (the lowest deep layer in 1:1 worlds) and
+  you come out at the opposite point of the globe (latitude flipped,
+  longitude plus 180°). You burst out of a small hole and get thrown up and
+  forward, the way you were facing, so you land clear of it, with a few
+  seconds of slow falling. Mobs and items go through too.
+  Most land is opposite ocean, so expect to surface at sea.
 * **Structures** (all worlds, including old ones, for newly generated
   chunks):
   * Placement checks see the real terrain's biomes, so villages don't land

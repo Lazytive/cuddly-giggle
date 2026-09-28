@@ -302,6 +302,29 @@ final class SelfTest {
             }
         }
 
+        // 6. new worlds: no bedrock, and falling out of the bottom leads to the antipode
+        if (t.settings.minecraftFeel() && t.settings.deepLayers() == 0) {
+            double[] q = new double[2];
+            t.projection.forward(139.5, 35.5, q);
+            int bx = (int) Math.floor(q[0]), bz = (int) Math.floor(q[1]);
+            level.getChunk(bx >> 4, bz >> 4);
+            Block floorBlock = level.getBlockState(new BlockPos(bx, level.getMinBuildHeight(), bz)).getBlock();
+            if (floorBlock == net.minecraft.world.level.block.Blocks.BEDROCK) errors.add("the world floor is still bedrock");
+            Pig faller = EntityType.PIG.create(level);
+            faller.moveTo(bx + 0.5, level.getMinBuildHeight() - 10, bz + 0.5, 0f, 0f);
+            level.addFreshEntity(faller);
+            net.minecraft.world.entity.Entity out = ThroughTheEarth.send(level, gen, faller);
+            double[] ll = new double[2];
+            if (out == null) errors.add("falling through the Earth failed");
+            else {
+                t.projection.inverse(out.getX(), out.getZ(), ll);
+                boolean antipode = Math.abs(ll[1] + 35.5) < 0.05 && Math.abs(Math.abs(ll[0] - 139.5) - 180) < 0.05;
+                notes.add(String.format("fell through the Earth from 35.5N 139.5E to %.2f, %.2f at y %.0f", ll[1], ll[0], out.getY()));
+                if (!antipode || out.getY() < t.settings.seaLevel() - 1) errors.add("did not come out at the antipode surface");
+                out.discard();
+            }
+        }
+
         // 4. commands are registered
         if (server.getCommands().getDispatcher().getRoot().getChild("earth") == null) errors.add("/earth missing");
         if (Palette.BLOCKS.length != gen.states().length) errors.add("block palette");

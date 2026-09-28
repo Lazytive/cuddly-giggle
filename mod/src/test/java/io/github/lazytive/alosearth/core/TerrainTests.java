@@ -74,7 +74,7 @@ final class TerrainTests {
             int top = t.top((int) Math.floor(p[0]), (int) Math.floor(p[1]));
             check(Math.abs(top - (s.seaLevel() + 614.2)) < 15, "1:5 peak at " + top);
             // anything deeper than the world allows stops just above the bedrock band
-            check(t.block((int) Math.floor(p[0]), s.minY(), (int) Math.floor(p[1])) == Palette.BEDROCK, "bedrock floor");
+            check(t.block((int) Math.floor(p[0]), s.minY(), (int) Math.floor(p[1])) == Palette.DEEPSLATE, "no bedrock: the floor can be dug through");
         });
 
         run("max option: Everest at the top, the Challenger Deep at the bottom", () -> {
@@ -118,8 +118,8 @@ final class TerrainTests {
             check(Math.abs(floor - (s.seaLevel() - depth)) < 20 && floor < s.minY(), "sea floor " + floor + " for depth " + depth);
             check(t.surface(x, z) == s.seaLevel() && t.block(x, floor + 1, z) == Palette.WATER
                 && t.block(x, floor - 50, z) == Palette.DEEPSLATE, "water column");
-            check(t.block(x, s.bottomY(), z) == Palette.BEDROCK && t.block(x, s.minY(), z) != Palette.BEDROCK,
-                "bedrock only at the bottom of the last layer");
+            check(t.block(x, s.bottomY(), z) == Palette.DEEPSLATE && t.block(x, s.minY(), z) != Palette.BEDROCK,
+                "no bedrock (new worlds): the bottom of the last layer can be dug through");
         });
 
         run("same input gives the same terrain", () -> {
