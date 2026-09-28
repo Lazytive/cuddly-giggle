@@ -130,6 +130,7 @@ public final class EarthChunkGenerator extends ChunkGenerator {
     public CompletableFuture<ChunkAccess> fillFromNoise(Blender blender, RandomState randomState,
                                                         StructureManager structureManager, ChunkAccess chunk) {
         fill(chunk);
+        if (layer == 0) adaptToStructures(chunk, structureManager);
         return CompletableFuture.completedFuture(chunk);
     }
 
@@ -201,6 +202,45 @@ public final class EarthChunkGenerator extends ChunkGenerator {
         }
     }
 
+    /**
+     * What vanilla's noise generator does around structures (the "beardifier"): ground is filled in
+     * under buildings that would float and cut away where it would bury them, blending over a few
+     * blocks. The structure pieces decide how much (villages "beard thin", strongholds "bury", and so
+     * on); the terrain here is treated as a density falling off over 8 blocks from its surface.
+     */
+    private void adaptToStructures(ChunkAccess chunk, StructureManager structureManager) {
+        if (chunk.getAllReferences().isEmpty() && chunk.getAllStarts().isEmpty()) return;
+        net.minecraft.world.level.levelgen.Beardifier beard =
+            net.minecraft.world.level.levelgen.Beardifier.forStructuresInChunk(structureManager, chunk.getPos());
+        Terrain t = terrain();
+        BlockState[] st = states();
+        int x0 = chunk.getPos().getMinBlockX(), z0 = chunk.getPos().getMinBlockZ();
+        int minY = chunk.getMinBuildHeight(), maxY = chunk.getMaxBuildHeight() - 1;
+        Heightmap oceanFloor = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.OCEAN_FLOOR_WG);
+        Heightmap worldSurface = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.WORLD_SURFACE_WG);
+        Terrain.Tile tile = t.tileAt(x0, z0);
+        for (int c = 0; c < 256; c++) {
+            int lx = c & 15, lz = c >> 4, x = x0 + lx, z = z0 + lz, i = Terrain.index(x, z);
+            int top = tile.top[i], water = tile.water[i];
+            int newTop = Integer.MIN_VALUE;
+            for (int y = Math.max(minY, top - 16); y <= Math.min(maxY, top + 32); y++) {
+                double b = beard.compute(new net.minecraft.world.level.levelgen.DensityFunction.SinglePointContext(x, y, z));
+                if (b == 0) continue;
+                boolean solid = (top - y + 0.5) / 8.0 + b > 0, wasSolid = y <= top;
+                if (solid == wasSolid) continue;
+                BlockState state = solid ? st[Palette.DIRT] : y <= water ? st[Palette.WATER] : st[Palette.AIR];
+                chunk.getSection(chunk.getSectionIndex(y)).setBlockState(lx, y & 15, lz, state, false);
+                oceanFloor.update(lx, y, lz, state);
+                worldSurface.update(lx, y, lz, state);
+                if (solid) newTop = Math.max(newTop, y);
+            }
+            if (newTop > top) { // the raised ground gets the column's own surface block
+                BlockState surface = st[t.block(tile, i, x, top, z)];
+                chunk.getSection(chunk.getSectionIndex(newTop)).setBlockState(lx, newTop & 15, lz, surface, false);
+            }
+        }
+    }
+
     @Override
     public void applyBiomeDecoration(WorldGenLevel level, ChunkAccess chunk, StructureManager structureManager) {
         // Deep layers get no decoration: kelp and coral don't grow kilometres down, and vanilla's
@@ -246,6 +286,13 @@ public final class EarthChunkGenerator extends ChunkGenerator {
         if (path.equals("monument")) {
             int floor = t.top(c.getX(), c.getZ());
             return floor >= 22 && floor <= 38 && t.surface(c.getX(), c.getZ()) > floor + 20;
+        }
+        if (path.startsWith("ocean_ruin") || path.equals("shipwreck")) { // under water all round, not on the beach
+            for (int[] d : new int[][] {{0, 0}, {16, 0}, {-16, 0}, {0, 16}, {0, -16}, {11, 11}, {-11, 11}, {11, -11}, {-11, -11}}) {
+                int x = c.getX() + d[0], z = c.getZ() + d[1];
+                if (t.surface(x, z) - t.top(x, z) < 3) return false;
+            }
+            return true;
         }
         boolean onSurface = structure.step() == GenerationStep.Decoration.SURFACE_STRUCTURES
             && !path.startsWith("ruined_portal") && !path.startsWith("shipwreck") && !path.startsWith("ocean_ruin")
