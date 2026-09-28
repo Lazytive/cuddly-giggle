@@ -52,10 +52,15 @@ jobs:
             | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
           echo "Immersive Portals version id $ipv"
           echo "ORG_GRADLE_PROJECT_immersive_portals_version=$ipv" >> "$GITHUB_ENV"
-          dlv=$(curl -sSf 'https://api.modrinth.com/v2/project/dimlib/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D' \
-            | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
-          echo "DimLib (needed by Immersive Portals) version id $dlv"
-          echo "ORG_GRADLE_PROJECT_dimlib_version=$dlv" >> "$GITHUB_ENV"
+          # what Immersive Portals needs at runtime (only for the self-test below)
+          deps=""
+          for slug in dimlib midnightlib cloth-config; do
+            id=$(curl -sSf "https://api.modrinth.com/v2/project/$slug/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D" \
+              | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
+            echo "$slug version id $id"
+            deps="$deps${deps:+,}$slug:$id"
+          done
+          echo "ORG_GRADLE_PROJECT_immersive_portals_runtime=$deps" >> "$GITHUB_ENV"
           dhv=$(curl -sSf 'https://api.modrinth.com/v2/project/distanthorizons/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D' \
             | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
           echo "Distant Horizons version id $dhv"
