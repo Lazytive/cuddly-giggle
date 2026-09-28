@@ -153,6 +153,19 @@ jobs:
           sed -i 's/^level-type=.*/level-type=alosearth\\:earth_1to1_buildings/' run/server.properties
           timeout 900 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
           grep -h "buildings" run/logs/latest.log | tail -5 || true
+          python3 - <<'PY' || true
+          import json, glob, collections
+          for f in glob.glob("run/alosearth-data/auto/buildings/15/29105/*.json"):
+              d = json.load(open(f))
+              feats = d.get("features", [])
+              print(f, len(feats), "features; top-level keys", list(d.keys()))
+              keys = collections.Counter(k for x in feats for k in (x.get("properties") or {}))
+              print("property keys:", keys.most_common(30))
+              hs = sorted(((x.get("properties") or {}).get("height") for x in feats), key=lambda v: (v is None, v if isinstance(v, (int, float)) else 0))
+              print("heights (lowest, highest):", hs[:5], hs[-15:])
+              if feats:
+                  print("sample:", json.dumps(feats[0])[:1500])
+          PY
           cat run/alosearth-selftest.txt
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
           sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
