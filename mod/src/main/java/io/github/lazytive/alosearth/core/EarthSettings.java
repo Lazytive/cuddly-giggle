@@ -36,12 +36,19 @@ public record EarthSettings(double centerLat, double centerLon, double metersPer
         -1152, 2240, 63, 575.0, 5750.0, 60.0, 600.0, 0.35, true, true, true, 0);
 
     /**
-     * 1 block = 5 m with real proportions: the largest scale at which the whole Earth fits one
-     * Minecraft dimension (y -2032..2031). Everest peaks near y 1833; only the bottoms of the
-     * deepest trenches (below ~10.4 km) are trimmed to stay above bedrock.
+     * 1 block = 5 m with real proportions in one Minecraft dimension (y -2032..2031): sea level
+     * y 161, so the Challenger Deep (10.9 km) ends just above bedrock and Everest peaks near y 1931.
+     * (1:5 worlds made before sea level moved keep y 63, where only trench bottoms are trimmed.)
      */
     public static final EarthSettings ONE_TO_FIVE = new EarthSettings(0.0, 24.0, 5.0, 512,
-        -2032, 4064, 63, 575.0, 5750.0, 60.0, 600.0, 0.3, true, true, true, 0);
+        -2032, 4064, 161, 575.0, 5750.0, 60.0, 600.0, 0.3, true, true, true, 0);
+
+    /**
+     * The largest Earth with real proportions that Minecraft can hold: 1 block = 4.9 m, the
+     * Challenger Deep at the bottom of the world (~y -2026) and Everest at the top (~y 2012).
+     */
+    public static final EarthSettings MAX = new EarthSettings(0.0, 24.0, 4.9, 512,
+        -2032, 4064, 206, 575.0, 5750.0, 60.0, 600.0, 0.3, true, true, true, 0);
 
     /** DEFAULT as new worlds get it (with the downloaded sea floor). */
     public static final EarthSettings MINECRAFT_LIKE = DEFAULT.withSeaFloor(true);

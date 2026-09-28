@@ -25,19 +25,22 @@ arrive where you would on the real Earth.
 * **Where the mod goes:** drop `alos-earth-<version>.jar` into `mods/`.
 * **Servers:** the mod only has to be installed on the server; players
   can join with an unmodded client.
-* **Single player:** when creating the world, pick one of five world types:
+* **Single player:** when creating the world, pick one of six world types:
   * **ALOS Earth (Minecraft‑like):** the style described above.
   * **ALOS Earth (true 1:30):** the data's real proportions, 1 block = 30 m
     vertically as well. Hills are gentle, Everest peaks near y 358, and
     oceans reach down to y −304 (the world runs from y −320 to 384).
   * **ALOS Earth (1:10):** 1 block = 10 m, everything to scale, see
     [The 1:10 and 1:5 worlds](#the-110-and-15-worlds).
-  * **ALOS Earth (1:5):** 1 block = 5 m, everything to scale: the biggest
-    Earth that fits in one Minecraft world.
+  * **ALOS Earth (1:5):** 1 block = 5 m, everything to scale, trenches
+    included.
+  * **ALOS Earth (max, 1:4.9):** the biggest Earth with real proportions that
+    fits in Minecraft. Everest is at the top of the world and the deepest
+    trench at the bottom.
   * **ALOS Earth (1:1):** 1 block = 1 m, see [The 1:1 world](#the-11-world).
 * **Dedicated server:** set `level-type=alosearth\:earth` (Minecraft‑like),
   `level-type=alosearth\:earth_true_scale`, `level-type=alosearth\:earth_1to10`,
-  `level-type=alosearth\:earth_1to5` or
+  `level-type=alosearth\:earth_1to5`, `level-type=alosearth\:earth_max` or
   `level-type=alosearth\:earth_1to1`
   in `server.properties` before the world is first created.
 
@@ -53,17 +56,27 @@ and ocean has its real shape. **1:10** (1 block = 10 m):
 * **Detail:** the data has a point every 3 blocks, smoothly interpolated with
   light detail added.
 
-**1:5** (1 block = 5 m) is the largest scale at which the whole Earth still
-fits in one Minecraft world, whose height limit is y −2032 to 2031:
-* **Heights:** Everest peaks near y 1833.
-* **Deepest trenches:** the ocean is to scale down to 10.4 km. Only the very
-  bottoms of the deepest trenches (the Mariana, Tonga and Kuril trenches,
-  down to 11 km) are trimmed to stay above bedrock.
-* **Sea level:** it stays at y 63 because Minecraft's clouds are fixed at
-  y 192. A higher sea level would put clouds just above the coast.
+**1:5** (1 block = 5 m) fits the whole Earth, trenches included, in one
+Minecraft world (y −2032 to 2031):
+* **Heights:** sea level is y 161, Everest peaks near y 1931, and the
+  Challenger Deep bottoms out just above bedrock.
 * **Size:** Fuji is about 7,500 blocks across and 755 blocks tall, and the
   Earth is 8 million blocks around.
 * **Detail:** the data has a point every 6 blocks.
+* **Older 1:5 worlds:** worlds made with beta.18 keep sea level y 63, so only
+  their trench bottoms (below 10.4 km) are trimmed.
+
+**Max** (1 block = 4.9 m) is the biggest Earth with real proportions that
+Minecraft can hold:
+* **Heights:** sea level is y 206, the Challenger Deep is near y −2026 (just
+  above bedrock) and Everest reaches about y 2012 (just under the build
+  limit).
+
+**Clouds:** vanilla Minecraft draws clouds at y 192, which in these worlds
+would be close to sea level or even underwater. With the mod installed on
+your game, the 1:5 and max worlds draw clouds at y 480, and 1:1 draws them at
+y 1300, about 1.2–2 km above sea level. Players without the mod on a server
+still see clouds at y 192.
 
 ### The 1:1 world
 

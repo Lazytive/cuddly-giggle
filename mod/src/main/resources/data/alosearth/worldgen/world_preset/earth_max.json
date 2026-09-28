@@ -1,31 +1,31 @@
 {
   "dimensions": {
     "minecraft:overworld": {
-      "type": "alosearth:earth_1to5",
+      "type": "alosearth:earth_max",
       "generator": {
         "type": "alosearth:earth",
         "biome_source": {
           "type": "alosearth:earth",
           "settings": {
-            "meters_per_block": 5.0,
+            "meters_per_block": 4.9,
             "min_y": -2032,
             "height": 4064,
+            "sea_level": 206,
             "detail": 0.3,
             "true_scale": true,
             "sea_floor": true,
-            "true_ocean": true,
-            "sea_level": 161
+            "true_ocean": true
           }
         },
         "settings": {
-          "meters_per_block": 5.0,
+          "meters_per_block": 4.9,
           "min_y": -2032,
           "height": 4064,
+          "sea_level": 206,
           "detail": 0.3,
           "true_scale": true,
           "sea_floor": true,
-          "true_ocean": true,
-          "sea_level": 161
+          "true_ocean": true
         }
       }
     },

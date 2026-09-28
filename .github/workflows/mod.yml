@@ -120,6 +120,18 @@ jobs:
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
           sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
 
+      - name: Run the in-game self-test on the max world (1:4.9)
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth_max/' run/server.properties
+          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          cat run/alosearth-selftest.txt
+          grep -q "world height -2032..2032" run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
+
       - name: Run the in-game self-test on a 1:1 world (deep ocean layers)
         env:
           ALOSEARTH_SELFTEST: "1"

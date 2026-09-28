@@ -16,7 +16,7 @@ import static io.github.lazytive.alosearth.core.Palette.*;
  * <pre>
  * java -cp alos-earth.jar io.github.lazytive.alosearth.core.Preview \
  *     --aw3d30 DIR --fill DIR --bathymetry DIR --climate FILE \
- *     --bbox SOUTH,WEST,NORTH,EAST [--step BLOCKS] [--center LAT,LON] [--true-scale | --one-to-ten | --one-to-five | --one-to-one] [--auto DIR] -o out.png
+ *     --bbox SOUTH,WEST,NORTH,EAST [--step BLOCKS] [--center LAT,LON] [--true-scale | --one-to-ten | --one-to-five | --max | --one-to-one] [--auto DIR] -o out.png
  * </pre>
  */
 public final class Preview {
@@ -115,7 +115,7 @@ public final class Preview {
         List<Path> aw = new ArrayList<>(), fill = new ArrayList<>(), bathy = new ArrayList<>(), clim = new ArrayList<>();
         String bbox = null, out = "preview.png";
         Path auto = null;
-        boolean trueScale = false, oneToOne = false, oneToTen = false, oneToFive = false;
+        boolean trueScale = false, oneToOne = false, oneToTen = false, oneToFive = false, max = false;
         int step = 0;
         double clat = EarthSettings.DEFAULT.centerLat(), clon = EarthSettings.DEFAULT.centerLon();
         for (int i = 0; i < args.length; i++) {
@@ -129,6 +129,7 @@ public final class Preview {
                 case "--one-to-one" -> oneToOne = true;
                 case "--one-to-ten" -> oneToTen = true;
                 case "--one-to-five" -> oneToFive = true;
+                case "--max" -> max = true;
                 case "--bbox" -> bbox = args[++i];
                 case "--step" -> step = Integer.parseInt(args[++i]);
                 case "--center" -> {
@@ -141,7 +142,7 @@ public final class Preview {
             }
         }
         if (bbox == null) throw new IllegalArgumentException("--bbox SOUTH,WEST,NORTH,EAST is required");
-        EarthSettings d = oneToOne ? EarthSettings.ONE_TO_ONE : oneToTen ? EarthSettings.ONE_TO_TEN : oneToFive ? EarthSettings.ONE_TO_FIVE
+        EarthSettings d = oneToOne ? EarthSettings.ONE_TO_ONE : oneToTen ? EarthSettings.ONE_TO_TEN : oneToFive ? EarthSettings.ONE_TO_FIVE : max ? EarthSettings.MAX
             : trueScale ? EarthSettings.TRUE_SCALE : EarthSettings.MINECRAFT_LIKE;
         EarthSettings s = d.withCenter(clat, clon);
         Terrain t = new Terrain(s, new DataSources(aw, fill, bathy, clim, auto, 512L << 20));

@@ -64,7 +64,7 @@ final class TerrainTests {
         run("1:5 option: the largest fully to-scale world", () -> {
             EarthSettings s = EarthSettings.ONE_TO_FIVE;
             check(Math.abs(s.landBlocks(8849) - 1769.8) < 1e-9 && s.seaLevel() + s.landBlocks(8849) + 60 < s.maxY(), "Everest fits");
-            check(s.seaLevel() - s.oceanBlocks(10400) > s.minY() + 5, "10.4 km deep fits");
+            check(s.seaLevel() - s.oceanBlocks(10935) > s.minY() + 5, "Challenger Deep fits");
             check(s.fine() && s.deepLayers() == 0, "one dimension");
             int[] b = new CubeProjection(s.metersPerBlock(), s.centerLat(), s.centerLon(), s.margin()).bounds();
             for (int v : b) check(Math.abs(v) < 29_999_000, "map inside the world border");
@@ -75,6 +75,15 @@ final class TerrainTests {
             check(Math.abs(top - (s.seaLevel() + 614.2)) < 15, "1:5 peak at " + top);
             // anything deeper than the world allows stops just above the bedrock band
             check(t.block((int) Math.floor(p[0]), s.minY(), (int) Math.floor(p[1])) == Palette.BEDROCK, "bedrock floor");
+        });
+
+        run("max option: Everest at the top, the Challenger Deep at the bottom", () -> {
+            EarthSettings s = EarthSettings.MAX;
+            double everest = s.seaLevel() + s.landBlocks(8849), deep = s.seaLevel() - s.oceanBlocks(10935);
+            check(everest > s.maxY() - 30 && everest < s.maxY() - 12, "Everest at " + everest);
+            check(deep < s.minY() + 12 && deep > s.minY() + 5, "Challenger Deep at " + deep);
+            int[] b = new CubeProjection(s.metersPerBlock(), s.centerLat(), s.centerLon(), s.margin()).bounds();
+            for (int v : b) check(Math.abs(v) < 29_999_000, "map inside the world border");
         });
 
         run("1:1 option: real ocean depths through the deep layers, land fits", () -> {
