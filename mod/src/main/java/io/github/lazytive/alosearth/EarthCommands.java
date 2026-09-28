@@ -63,6 +63,7 @@ public final class EarthCommands {
     public static void register(CommandDispatcher<CommandSourceStack> d) {
         d.register(Commands.literal("earth")
             .then(Commands.literal("whereami").executes(EarthCommands::whereami))
+            .then(Commands.literal("status").executes(EarthCommands::status))
             .then(Commands.literal("goto").requires(s -> s.hasPermission(2))
                 .then(Commands.argument("lat", DoubleArgumentType.doubleArg(-90, 90))
                     .then(Commands.argument("lon", DoubleArgumentType.doubleArg(-180, 180))
@@ -104,6 +105,14 @@ public final class EarthCommands {
         return 1;
     }
 
+    private static int status(CommandContext<CommandSourceStack> c) {
+        EarthChunkGenerator g = generator(c.getSource());
+        if (g == null) return 0;
+        String msg = "ALOS Earth data: " + g.terrain().data.describe();
+        c.getSource().sendSuccess(() -> Component.literal(msg), false);
+        return 1;
+    }
+
     private static int go(CommandContext<CommandSourceStack> c, double lat, double lon, String name)
         throws CommandSyntaxException {
         EarthChunkGenerator g = generator(c.getSource());
@@ -117,6 +126,10 @@ public final class EarthCommands {
         player.teleportTo(c.getSource().getLevel(), x + 0.5, y, z + 0.5, player.getYRot(), player.getXRot());
         String label = name != null ? name : String.format(Locale.ROOT, "%.4f, %.4f", lat, lon);
         c.getSource().sendSuccess(() -> Component.literal("Teleported to " + label + " (" + x + " " + y + " " + z + ")"), true);
+        if (!t.data.hasElevationSource(lon, lat)) {
+            c.getSource().sendSuccess(() -> Component.literal("No elevation data installed for this area, so it is ocean. "
+                + "Add AW3D30 tiles to alosearth-data/aw3d30 or enable auto_download in config/alosearth.json."), false);
+        }
         return 1;
     }
 }

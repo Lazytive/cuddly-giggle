@@ -54,25 +54,40 @@ it leaves the current jar alone and the game starts normally.
 
 ## Data
 
-The first launch writes `config/alosearth.json` and creates the folders
-below. Put the data in them; relative paths are resolved against the game or
-server folder.
+**It works out of the box.** Where no elevation data is installed, the mod
+downloads the free **Copernicus GLO‑30** 30 m elevation model one 1°×1° tile
+at a time (about 40 MB each) the first time an area generates, and caches it
+in `alosearth-data/auto/`.
+
+* **First visit to an area:** there's a short pause while its tile
+  downloads.
+* **Open ocean:** it has no tiles, and that is remembered so nothing is
+  re‑fetched.
+* **Offline:** unreachable areas become ocean; the mod tries again later.
+
+Install your own data to override it. The first launch writes
+`config/alosearth.json` and creates these folders; relative paths are
+resolved against the game or server folder:
 
 | folder | what | needed? |
 |---|---|---|
-| `alosearth-data/aw3d30/` | AW3D30 zip bundles as downloaded from JAXA (or extracted `*_DSM.tif` + `*_MSK.tif`) | yes; without it everything is ocean |
-| `alosearth-data/gebco/` | GEBCO global grid GeoTIFFs | recommended: sea floor, poles, gaps |
-| `alosearth-data/fill/` | any lon/lat GeoTIFF DEM tiles (e.g. Copernicus GLO‑30) | optional: fills AW3D30 gaps |
-| `alosearth-data/climate/` | Köppen‑Geiger 1 km GeoTIFF (Beck et al.) | optional: deserts, jungles, taiga… |
+| `alosearth-data/aw3d30/` | JAXA ALOS AW3D30 zip bundles as downloaded (or extracted `*_DSM.tif` + `*_MSK.tif`) | optional; **preferred** over the download, and adds lakes and rivers from its water mask |
+| `alosearth-data/gebco/` | GEBCO global grid GeoTIFFs | recommended: real sea floor and poles |
+| `alosearth-data/fill/` | any lon/lat GeoTIFF DEM tiles | optional: fills gaps |
+| `alosearth-data/climate/` | Köppen‑Geiger 1 km GeoTIFF (Beck et al.) | optional: deserts, jungles, taiga where they really are |
 
-* Data is read on demand, with a cache of recently used tiles (`cache_mb`
-  in the config), so only the areas people visit are ever loaded.
-* Put it on an SSD if you can: the first visit to an area reads it from
-  disk.
+* **Order of use:** AW3D30 → fill → auto‑download → GEBCO → ocean.
+* **Turning off downloads:** set `"auto_download": false` in the config.
+* **Checking what's loaded:** run `/earth status`.
+
+Auto‑downloaded terrain contains modified Copernicus Service information
+(Copernicus DEM GLO‑30, © DLR e.V. 2010‑2014 and © Airbus Defence and Space
+GmbH 2014‑2018, provided under COPERNICUS by the European Union and ESA).
 
 ## In game
 
 * **Commands:**
+  * `/earth status` shows which elevation data is in use.
   * `/earth goto <place>` or `/earth goto <lat> <lon>` teleports you
     (operators only). Built‑in places include `everest`, `fuji`,
     `mont_blanc`, `grand_canyon`, `london`, `north_pole` and more; press Tab

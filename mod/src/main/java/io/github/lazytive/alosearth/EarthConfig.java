@@ -22,6 +22,9 @@ public final class EarthConfig {
     public List<String> bathymetry = List.of("alosearth-data/gebco");
     public List<String> climate = List.of("alosearth-data/climate");
     public int cache_mb = 768;
+    /** Download Copernicus 30 m elevation for areas with no installed tiles. */
+    public boolean auto_download = true;
+    public String auto_download_dir = "alosearth-data/auto";
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
@@ -49,7 +52,8 @@ public final class EarthConfig {
                       fill/     optional: any lon/lat GeoTIFF DEM tiles used where AW3D30 has none
                       gebco/    optional: GEBCO global grid GeoTIFFs (sea floor, poles)
                       climate/  optional: Koppen-Geiger 1 km GeoTIFF (Beck et al.) for biomes
-                    Without data the world is ocean.
+                      auto/     elevation downloaded automatically (Copernicus GLO-30) where
+                                nothing above is installed; set "auto_download": false to turn off
                     """);
                 AlosEarth.LOG.info("Wrote default config {}", file);
             }
@@ -62,6 +66,7 @@ public final class EarthConfig {
     DataSources open() {
         Path game = FabricLoader.getInstance().getGameDir();
         return new DataSources(paths(game, aw3d30), paths(game, fill_dem), paths(game, bathymetry), paths(game, climate),
+            auto_download ? game.resolve(auto_download_dir == null ? "alosearth-data/auto" : auto_download_dir) : null,
             (long) Math.max(64, cache_mb) << 20);
     }
 

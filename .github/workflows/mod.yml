@@ -48,6 +48,7 @@ jobs:
       - name: Build and run core tests
         env:
           ALOSEARTH_TESTDATA: ${{ github.workspace }}/mod/build/testdata
+          ALOSEARTH_NET: "1"
         run: ./gradlew build --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION"
 
       - name: Prepare a dedicated server with an ALOS Earth world
@@ -70,6 +71,7 @@ jobs:
             "fill_dem": [],
             "bathymetry": ["$d/gebco.tif"],
             "climate": ["$d/climate"],
+            "auto_download": false,
             "cache_mb": 256
           }
           JSON

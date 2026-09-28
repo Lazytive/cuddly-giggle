@@ -94,6 +94,20 @@ final class TerrainTests {
             check(checked > 400, "only " + checked + " checked");
         });
 
+        if ("1".equals(System.getenv("ALOSEARTH_NET"))) {
+            run("auto-download fetches real elevation", () -> {
+                Path dir = java.nio.file.Files.createTempDirectory("alosearth-auto");
+                AutoDem auto = new AutoDem(dir, new Rasters.SegmentCache(128L << 20));
+                double fuji = auto.bilinear(138.7274, 35.3606);
+                check(fuji > 3500 && fuji < 3900, "Fuji summit " + fuji);
+                check(Double.isNaN(auto.bilinear(-140.2, 0.3)), "open Pacific should have no tile");
+                check(auto.downloaded.get() == 1 && auto.missing.get() == 1, auto.describe());
+                // a second instance reuses the cached files without downloading
+                AutoDem again = new AutoDem(dir, new Rasters.SegmentCache(128L << 20));
+                check(Math.abs(again.bilinear(138.7274, 35.3606) - fuji) < 1e-6 && again.downloaded.get() == 0, "cache");
+            });
+        }
+
         run("tile speed", () -> {
             Terrain t = new Terrain(EarthSettings.DEFAULT, sources(data));
             double[] p = new double[2];

@@ -292,6 +292,10 @@ public final class Terrain {
                 e = data.fillDem.bilinear(lon, la);
                 c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
             }
+            if (Double.isNaN(e) && data.autoDem != null) {
+                e = data.autoDem.bilinear(lon, la);
+                c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
+            }
             double b = Double.NaN;
             if ((Double.isNaN(e) || c == Rasters.CLS_SEA) && !data.bathymetry.isEmpty()) {
                 b = data.bathymetry.bilinear(lon, la);

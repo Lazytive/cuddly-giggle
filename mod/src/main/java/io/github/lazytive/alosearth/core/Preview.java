@@ -114,6 +114,7 @@ public final class Preview {
     public static void main(String[] args) throws Exception {
         List<Path> aw = new ArrayList<>(), fill = new ArrayList<>(), bathy = new ArrayList<>(), clim = new ArrayList<>();
         String bbox = null, out = "preview.png";
+        Path auto = null;
         int step = 0;
         double clat = EarthSettings.DEFAULT.centerLat(), clon = EarthSettings.DEFAULT.centerLon();
         for (int i = 0; i < args.length; i++) {
@@ -122,6 +123,7 @@ public final class Preview {
                 case "--fill" -> fill.add(Path.of(args[++i]));
                 case "--bathymetry" -> bathy.add(Path.of(args[++i]));
                 case "--climate" -> clim.add(Path.of(args[++i]));
+                case "--auto" -> auto = Path.of(args[++i]);
                 case "--bbox" -> bbox = args[++i];
                 case "--step" -> step = Integer.parseInt(args[++i]);
                 case "--center" -> {
@@ -137,7 +139,7 @@ public final class Preview {
         EarthSettings d = EarthSettings.DEFAULT;
         EarthSettings s = new EarthSettings(clat, clon, d.metersPerBlock(), d.margin(), d.minY(), d.height(),
             d.seaLevel(), d.landScale(), d.landKnee(), d.oceanScale(), d.oceanKnee(), d.detail());
-        Terrain t = new Terrain(s, new DataSources(aw, fill, bathy, clim, 512L << 20));
+        Terrain t = new Terrain(s, new DataSources(aw, fill, bathy, clim, auto, 512L << 20));
         String[] b = bbox.split(",");
         double south = Double.parseDouble(b[0]), west = Double.parseDouble(b[1]);
         double north = Double.parseDouble(b[2]), east = Double.parseDouble(b[3]);
