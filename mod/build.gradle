@@ -9,11 +9,24 @@ base {
     archivesName = project.archives_base_name
 }
 
+repositories {
+    maven {
+        name = "Modrinth"
+        url = "https://api.modrinth.com/maven"
+        content { includeGroup "maven.modrinth" }
+    }
+}
+
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings loom.officialMojangMappings()
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    // optional: with Immersive Portals installed, the globe's seams become see-through portals
+    modCompileOnly "maven.modrinth:immersiveportals:${project.immersive_portals_version}"
+    if (project.findProperty("with_immersive_portals") == "true") {
+        modLocalRuntime "maven.modrinth:immersiveportals:${project.immersive_portals_version}"
+    }
 }
 
 processResources {

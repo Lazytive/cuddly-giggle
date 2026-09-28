@@ -267,13 +267,22 @@ The Earth is projected onto the six faces of a cube, unfolded like this
   what you'll find.
 * **No loading pause:** chunks on the far side are loaded as you approach.
 
-Known limits in the beta:
-* Your coordinates jump when you cross a seam.
+**Seamless edges with Immersive Portals (optional).** Install
+[Immersive Portals](https://modrinth.com/mod/immersiveportals) for 1.21.1
+alongside ALOS Earth, on both the client and the server. Every seam then
+becomes a see‑through portal the height of the world:
+* you see across the edge to the other side;
+* you walk over it with no teleport jump;
+* your heading carries on.
+The mod places these portals each time the server starts, and
+`/earth whereami` still shows where you really are.
+
+Known limits:
+* Your coordinates jump when you cross a seam. (Immersive Portals makes the
+  crossing itself seamless, but the numbers still change.)
 * Blocks built or dug right at a seam aren't mirrored into the copy on the
   other side.
 * Trees near a seam aren't copied exactly.
-* Nothing renders through a seam; for that, see the Immersive Portals plan in
-  the main README.
 
 ## Building
 

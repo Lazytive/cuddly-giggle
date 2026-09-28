@@ -18,6 +18,8 @@ import org.slf4j.LoggerFactory;
 public final class AlosEarth implements ModInitializer {
     public static final String MOD_ID = "alosearth";
     public static final Logger LOG = LoggerFactory.getLogger("ALOS Earth");
+    /** Immersive Portals installed: the seams become see-through portals. */
+    public static final boolean IMMERSIVE_PORTALS = net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("immersive_portals");
 
     private static volatile DataSources data;
     private static final Map<EarthSettings, Terrain> TERRAINS = new ConcurrentHashMap<>();
@@ -49,6 +51,7 @@ public final class AlosEarth implements ModInitializer {
         });
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> EarthClimate.active = null);
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            if (IMMERSIVE_PORTALS) io.github.lazytive.alosearth.compat.ImmersivePortalsSeams.setUp(server);
             if (SelfTest.enabled()) SelfTest.run(server);
         });
     }

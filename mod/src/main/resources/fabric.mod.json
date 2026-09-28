@@ -27,5 +27,8 @@
   },
   "mixins": [
     "alosearth.mixins.json"
-  ]
+  ],
+  "suggests": {
+    "immersive_portals": "*"
+  }
 }

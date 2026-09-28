@@ -31,7 +31,11 @@ public final class SeamHandler {
         List<Entity> movers = new ArrayList<>();
         for (Entity e : level.getAllEntities()) {
             if (e.isPassenger() || e.isRemoved()) continue;
-            if (p.faceAt(e.getX(), e.getZ()) == null) movers.add(e);
+            if (p.faceAt(e.getX(), e.getZ()) != null) continue;
+            // with Immersive Portals the seam portals carry players across (their client moves them);
+            // only step in for someone well past the edge, in case something slipped through
+            if (AlosEarth.IMMERSIVE_PORTALS && e instanceof ServerPlayer && p.distanceToSeam(e.getX(), e.getZ()) < 32) continue;
+            movers.add(e);
         }
         for (Entity e : movers) cross(level, p, e);
         if (level.getGameTime() % 20 == 0) {

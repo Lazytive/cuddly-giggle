@@ -325,6 +325,13 @@ final class SelfTest {
             }
         }
 
+        // 7. with Immersive Portals: a see-through portal on every seam, mapping exactly like the seam
+        if (AlosEarth.IMMERSIVE_PORTALS) {
+            String problem = io.github.lazytive.alosearth.compat.ImmersivePortalsSeams.check(level, gen);
+            if (problem != null) errors.add("Immersive Portals: " + problem);
+            else notes.add("Immersive Portals: seam portals match all " + gen.terrain().projection.links.length + " seams");
+        }
+
         // 4. commands are registered
         if (server.getCommands().getDispatcher().getRoot().getChild("earth") == null) errors.add("/earth missing");
         if (Palette.BLOCKS.length != gen.states().length) errors.add("block palette");
