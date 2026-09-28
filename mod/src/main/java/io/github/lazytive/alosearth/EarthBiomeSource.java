@@ -62,6 +62,13 @@ public final class EarthBiomeSource extends BiomeSource {
     public Holder<Biome> exactBiome(int x, int y, int z) {
         int bx = QuartPos.toBlock(x) + 2, bz = QuartPos.toBlock(z) + 2;
         Terrain t = AlosEarth.terrain(settings);
-        return holders.get(t.tileAt(bx, bz).biome[Terrain.index(bx, bz)]);
+        Terrain.Tile tile = t.tileAt(bx, bz);
+        int i = Terrain.index(bx, bz);
+        int cave = tile.caveBiome[i];
+        if (cave >= 0) { // lush or dripstone caves underground, where caves can run
+            int by = QuartPos.toBlock(y) + 2, top = tile.top[i];
+            if (by < top - 12 && by > top - Terrain.CAVE_DEPTH) return holders.get(cave);
+        }
+        return holders.get(tile.biome[i]);
     }
 }
