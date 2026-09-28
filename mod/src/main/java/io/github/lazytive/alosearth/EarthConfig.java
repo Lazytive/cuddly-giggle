@@ -27,6 +27,8 @@ public final class EarthConfig {
     public String auto_download_dir = "alosearth-data/auto";
     /** OSM Buildings tile URL ({x}/{y} at zoom 15) for the "1:1 + buildings" world type, or a local folder. */
     public String buildings_url = io.github.lazytive.alosearth.core.Buildings.DEFAULT_URL;
+    /** Where a new "1:1 + buildings" world starts (a name from /earth goto), or "" for the map centre. */
+    public String start_place = "tokyo";
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 

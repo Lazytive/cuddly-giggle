@@ -41,8 +41,29 @@ public final class AlosEarth implements ModInitializer {
         });
         CommandRegistrationCallback.EVENT.register((dispatcher, registries, environment) -> EarthCommands.register(dispatcher));
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            startInACity(server);
             if (SelfTest.enabled()) SelfTest.run(server);
         });
+    }
+
+    /**
+     * A brand-new world with buildings would otherwise start at the map's
+     * centre, in the central African rainforest: start it in a city instead.
+     */
+    private static void startInACity(net.minecraft.server.MinecraftServer server) {
+        var level = server.overworld();
+        if (!(level.getChunkSource().getGenerator() instanceof EarthChunkGenerator g) || !g.buildings
+            || level.getGameTime() != 0) {
+            return;
+        }
+        String place = EarthConfig.load().start_place;
+        double[] ll = place == null ? null : EarthCommands.PLACES.get(place.toLowerCase(java.util.Locale.ROOT));
+        if (ll == null) return;
+        double[] p = new double[2];
+        g.terrain().projection.forward(ll[1], ll[0], p);
+        int x = (int) Math.floor(p[0]), z = (int) Math.floor(p[1]);
+        level.setDefaultSpawnPos(new net.minecraft.core.BlockPos(x, g.terrain().surface(x, z) + 1, z), 0f);
+        LOG.info("New world with buildings: starting in {} ({}, {})", place, x, z);
     }
 
     /** The input data, loaded once (scanning a full AW3D30 download takes a few seconds). */

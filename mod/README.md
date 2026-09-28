@@ -84,6 +84,13 @@ generates, and cached in `alosearth-data/auto/buildings/`.
   * a flat roof;
   * courtyards left open.
 * **What you don't get:** roads, interiors, roof shapes and doors.
+* **Where you start:** a new world of this type starts in Tokyo
+  (`"start_place"` in `config/alosearth.json` picks another `/earth goto`
+  place). The map's centre is central African rainforest, which has almost
+  no buildings.
+* **Checking:** `/earth whereami` says how many buildings are mapped near
+  you, and `/earth status` shows whether this world has buildings and whether
+  their downloads are working.
 * **Coverage:** it depends on OpenStreetMap. Cities are well mapped, and
   heights are guessed from the number of floors (or about 8 m) where none is
   recorded.

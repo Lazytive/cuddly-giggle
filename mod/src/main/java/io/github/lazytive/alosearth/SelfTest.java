@@ -99,6 +99,11 @@ final class SelfTest {
             return;
         }
         Terrain t = gen.terrain();
+        BlockPos spawn = level.getSharedSpawnPos();
+        notes.add("new buildings world starts at " + t.describe(spawn.getX(), spawn.getZ()));
+        double[] sll = new double[2];
+        t.projection.inverse(spawn.getX() + 0.5, spawn.getZ() + 0.5, sll);
+        if (Math.abs(sll[0] - 139.7671) > 0.01 || Math.abs(sll[1] - 35.6812) > 0.01) errors.add("new buildings world does not start in Tokyo");
         double[] p = new double[2];
         t.projection.forward(139.7671, 35.6812, p);
         int cx = (int) Math.floor(p[0]) >> 4, cz = (int) Math.floor(p[1]) >> 4;
