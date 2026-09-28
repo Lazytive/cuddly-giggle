@@ -96,6 +96,18 @@ jobs:
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
           sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
 
+      - name: Run the in-game self-test on a 1:10 world
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth_1to10/' run/server.properties
+          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          cat run/alosearth-selftest.txt
+          grep -q "world height -1152..1088" run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
+
       - name: Run the in-game self-test on a 1:1 world (deep ocean layers)
         env:
           ALOSEARTH_SELFTEST: "1"
@@ -132,18 +144,6 @@ jobs:
           grep -h "Elevation download" run/logs/latest.log | tail -5 || true
           cat run/alosearth-selftest.txt
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
-
-      - name: Self-test a fresh 1:1 world with OSM buildings (Tokyo)
-        env:
-          ALOSEARTH_SELFTEST: buildings
-        run: |
-          rm -rf run/world run/alosearth-selftest.txt
-          sed -i 's/^level-type=.*/level-type=alosearth\\:earth_1to1_buildings/' run/server.properties
-          timeout 900 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
-          grep -h "buildings" run/logs/latest.log | tail -5 || true
-          cat run/alosearth-selftest.txt
-          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
-          sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
 
       - name: Upload server log and self-test report
         if: always()

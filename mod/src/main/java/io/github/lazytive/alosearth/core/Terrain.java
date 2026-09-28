@@ -579,8 +579,10 @@ public final class Terrain {
         double snowM = interp(alat, SNOW_LAT, SNOW_M);
         double snowH = settings.landBlocks(snowM);
         double treeH = settings.landBlocks(Math.max(0, snowM - 900));
-        // at 1:1 a climate-map pixel (~3 km) of mountain-top tundra would spill far down the slopes
-        if (settings.fine() && (zone == Zone.TUNDRA || zone == Zone.ICE) && alat < 55 && h < treeH) zone = Zone.BOREAL;
+        // at 1:10 and 1:1 a climate-map pixel (~3 km) of mountain-top tundra would spill far down the slopes
+        if (settings.fine() && (zone == Zone.TUNDRA || zone == Zone.ICE) && alat < 55 && h < treeH) {
+            zone = alat < 45 ? Zone.TEMPERATE : Zone.BOREAL;
+        }
 
         // base biome from the climate zone, varied in patches
         String biome = pickBiome(zone, x, y, z);

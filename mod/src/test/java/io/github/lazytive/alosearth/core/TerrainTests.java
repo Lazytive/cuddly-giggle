@@ -49,6 +49,26 @@ final class TerrainTests {
             check(Math.abs(top - want) < 8, "true-scale peak at " + top + ", expected about " + want);
         });
 
+        run("1:10 option: everything to scale in one dimension", () -> {
+            EarthSettings s = EarthSettings.ONE_TO_TEN;
+            check(Math.abs(s.landBlocks(8849) - 884.9) < 1e-9 && Math.abs(s.oceanBlocks(10994) - 1099.4) < 1e-9, "1:10");
+            check(s.seaLevel() + s.landBlocks(8849) + 60 < s.maxY(), "Everest fits");
+            check(s.seaLevel() - s.oceanBlocks(10994) > s.minY() + 50, "Mariana Trench fits");
+            check(s.fine() && s.bottomY() == s.minY(), "smooth sampling, no deep layers");
+            int[] b = new CubeProjection(s.metersPerBlock(), s.centerLat(), s.centerLon(), s.margin()).bounds();
+            for (int v : b) check(Math.abs(v) < 29_999_000, "map inside the world border");
+            Terrain t = new Terrain(s, sources(data));
+            double[] p = new double[2];
+            t.projection.forward(139.5, 35.5, p);
+            int top = t.top((int) Math.floor(p[0]), (int) Math.floor(p[1]));
+            double want = s.seaLevel() + 307.1; // synthetic summit 3071 m
+            check(Math.abs(top - want) < 12, "1:10 peak at " + top + ", expected about " + want);
+            t.projection.forward(-12.857, -4, p); // ~2.5 km deep synthetic ocean
+            int floor = t.top((int) Math.floor(p[0]), (int) Math.floor(p[1]));
+            double depth = -t.data.bathymetry.bilinear(-12.857, -4);
+            check(Math.abs(floor - (s.seaLevel() - depth / 10)) < 8, "1:10 sea floor " + floor + " for depth " + depth);
+        });
+
         run("1:1 option: real ocean depths through the deep layers, land fits", () -> {
             EarthSettings s = EarthSettings.ONE_TO_ONE;
             double everest = s.seaLevel() + s.landBlocks(8849);

@@ -25,18 +25,30 @@ arrive where you would on the real Earth.
 * **Where the mod goes:** drop `alos-earth-<version>.jar` into `mods/`.
 * **Servers:** the mod only has to be installed on the server; players
   can join with an unmodded client.
-* **Single player:** when creating the world, pick one of three world types:
+* **Single player:** when creating the world, pick one of four world types:
   * **ALOS Earth (Minecraft‑like):** the style described above.
   * **ALOS Earth (true 1:30):** the data's real proportions, 1 block = 30 m
     vertically as well. Hills are gentle, Everest peaks near y 358, and
     oceans reach down to y −304 (the world runs from y −320 to 384).
+  * **ALOS Earth (1:10):** 1 block = 10 m, everything to scale, see
+    [The 1:10 world](#the-110-world).
   * **ALOS Earth (1:1):** 1 block = 1 m, see [The 1:1 world](#the-11-world).
-  * **ALOS Earth (1:1 + buildings):** the same, with OpenStreetMap buildings,
-    see [Buildings](#buildings).
 * **Dedicated server:** set `level-type=alosearth\:earth` (Minecraft‑like),
-  `level-type=alosearth\:earth_true_scale`, `level-type=alosearth\:earth_1to1` or
-  `level-type=alosearth\:earth_1to1_buildings`
+  `level-type=alosearth\:earth_true_scale`, `level-type=alosearth\:earth_1to10` or
+  `level-type=alosearth\:earth_1to1`
   in `server.properties` before the world is first created.
+
+### The 1:10 world
+
+1 block = 10 m, across and up and down alike, so every mountain, valley and
+ocean has its real shape:
+* **Heights:** Everest peaks near y 948, the Mariana Trench bottoms out near
+  y −1036, and the world runs from y −1152 to 1088.
+* **One world:** it's a single dimension with no squashing and no deep layers.
+* **Size:** Fuji is about 4,000 blocks across and 377 blocks tall, and the
+  Earth is 4 million blocks around.
+* **Detail:** the data has a point every 3 blocks, smoothly interpolated with
+  light detail added.
 
 ### The 1:1 world
 
@@ -69,9 +81,12 @@ world border).
   smoothly between the points and adds small bumps on top.
 * `/earth whereami` and F3 show your real elevation or depth.
 
-### Buildings
+### Buildings (hidden)
 
-The **1:1 + buildings** world type adds the world's buildings from
+Earlier betas had a **1:1 + buildings** world type. It is no longer in the
+menu because the OSM Buildings service refuses most players' requests, but
+worlds made with it still load. For a new one on a server, use
+`level-type=alosearth\:earth_1to1_buildings`. The world type adds the world's buildings from
 [OpenStreetMap](https://www.openstreetmap.org), fetched from the
 [OSM Buildings](https://osmbuildings.org) tile service when an area first
 generates, and cached in `alosearth-data/auto/buildings/`.

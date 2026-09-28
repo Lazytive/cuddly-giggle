@@ -6,7 +6,7 @@ package io.github.lazytive.alosearth.core;
  * compressed so Everest peaks near y 600. {@link #TRUE_SCALE} keeps the
  * data's real proportions: 1 block = 30 m vertically too (Everest ~y 358,
  * the Mariana Trench ~y -304) with only light detail added.
- * {@link #ONE_TO_ONE} is 1 block = 1 m: oceans at their real depth, carried
+ * {@link #ONE_TO_TEN} is 1 block = 10 m, fully to scale. {@link #ONE_TO_ONE} is 1 block = 1 m: oceans at their real depth, carried
  * on below the world's floor by {@code deepLayers} stacked dimensions, and
  * land 1:1 near sea level, easing off so Everest fits under the build limit.
  *
@@ -27,6 +27,13 @@ public record EarthSettings(double centerLat, double centerLon, double metersPer
         -320, 704, 63, 575.0, 5750.0, 60.0, 600.0, 0.25, true, true, true, 0);
     public static final EarthSettings ONE_TO_ONE = new EarthSettings(0.0, 24.0, 1.0, 512,
         -2032, 4064, 63, 760.0, 760.0, 60.0, 600.0, 1.0, false, true, true, 3);
+
+    /**
+     * 1 block = 10 m with real proportions (Everest ~y 948, the Mariana Trench ~y -1036): the
+     * whole Earth fits in one dimension without squashing mountains or stacking layers.
+     */
+    public static final EarthSettings ONE_TO_TEN = new EarthSettings(0.0, 24.0, 10.0, 512,
+        -1152, 2240, 63, 575.0, 5750.0, 60.0, 600.0, 0.35, true, true, true, 0);
 
     /** DEFAULT as new worlds get it (with the downloaded sea floor). */
     public static final EarthSettings MINECRAFT_LIKE = DEFAULT.withSeaFloor(true);
@@ -57,7 +64,7 @@ public record EarthSettings(double centerLat, double centerLon, double metersPer
 
     /** True when one data pixel spans many blocks (smooth interpolation, finer detail). */
     public boolean fine() {
-        return metersPerBlock < 10;
+        return metersPerBlock <= 10;
     }
 
     /** Blocks above sea level for an elevation in metres (negative below). */
