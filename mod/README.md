@@ -30,6 +30,28 @@ arrive where you would on the real Earth.
 * **Dedicated server:** set `level-type=alosearth\:earth` in
   `server.properties` before the world is first created.
 
+### Automatic updates (Prism Launcher)
+
+Every build that passes CI is published as the
+[`alos-earth-beta` release](https://github.com/Lazytive/cuddly-giggle/releases/tag/alos-earth-beta),
+always at the same link:
+<https://github.com/Lazytive/cuddly-giggle/releases/download/alos-earth-beta/alos-earth.jar>
+
+To have Prism install and update it on every launch:
+
+1. Open **Edit instance → Settings → Custom commands**.
+2. Tick the box to enable custom commands.
+3. Paste this as the **Pre‑launch command**:
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { [Net.ServicePointManager]::SecurityProtocol='Tls12'; & ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('https://github.com/Lazytive/cuddly-giggle/releases/download/alos-earth-beta/update-alos-earth.ps1'))) } catch { Write-Host 'ALOS Earth update skipped' }"
+```
+
+On each launch it fetches [`tools/update-alos-earth.ps1`](tools/update-alos-earth.ps1)
+from the release and runs it. The script puts the newest `alos-earth.jar` into
+the instance's `mods` folder, removing older copies. If there's no internet
+it leaves the current jar alone and the game starts normally.
+
 ## Data
 
 The first launch writes `config/alosearth.json` and creates the folders
