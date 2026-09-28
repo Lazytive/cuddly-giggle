@@ -285,20 +285,39 @@ public final class Terrain {
             py[i] = v[1] * radius;
             pz[i] = v[2] * radius;
 
-            data.aw3d30.sample(lon, la, smp);
-            double e = smp[0];
-            int c = (int) smp[1];
+            double e = Double.NaN, b = Double.NaN;
+            int c = Rasters.CLS_SEA;
+            // Data problems (a corrupt file, a network error) must never break
+            // world generation: that column just falls through to the next source.
+            try {
+                data.aw3d30.sample(lon, la, smp);
+                e = smp[0];
+                c = (int) smp[1];
+            } catch (RuntimeException ex) {
+                dataError(ex);
+            }
             if (Double.isNaN(e) && !data.fillDem.isEmpty()) {
-                e = data.fillDem.bilinear(lon, la);
-                c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
+                try {
+                    e = data.fillDem.bilinear(lon, la);
+                    c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
+                } catch (RuntimeException ex) {
+                    dataError(ex);
+                }
             }
             if (Double.isNaN(e) && data.autoDem != null) {
-                e = data.autoDem.bilinear(lon, la);
-                c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
+                try {
+                    e = data.autoDem.bilinear(lon, la);
+                    c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
+                } catch (RuntimeException ex) {
+                    dataError(ex);
+                }
             }
-            double b = Double.NaN;
             if ((Double.isNaN(e) || c == Rasters.CLS_SEA) && !data.bathymetry.isEmpty()) {
-                b = data.bathymetry.bilinear(lon, la);
+                try {
+                    b = data.bathymetry.bilinear(lon, la);
+                } catch (RuntimeException ex) {
+                    dataError(ex);
+                }
             }
             if (Double.isNaN(e) && !Double.isNaN(b)) {
                 e = b;
@@ -311,8 +330,12 @@ public final class Terrain {
 
             Zone zn = null;
             if (!data.climate.isEmpty()) {
-                double k = data.climate.nearest(lon, la);
-                if (!Double.isNaN(k)) zn = zoneForKoppen((int) k);
+                try {
+                    double k = data.climate.nearest(lon, la);
+                    if (!Double.isNaN(k)) zn = zoneForKoppen((int) k);
+                } catch (RuntimeException ex) {
+                    dataError(ex);
+                }
             }
             zone[i] = zn != null ? zn : zoneForLatitude(Math.abs(la));
         }
@@ -419,6 +442,12 @@ public final class Terrain {
             }
         }
         return t;
+    }
+
+    private final java.util.concurrent.atomic.AtomicInteger dataErrors = new java.util.concurrent.atomic.AtomicInteger();
+
+    private void dataError(RuntimeException ex) {
+        if (dataErrors.incrementAndGet() <= 5) AutoDem.log("data read failed, using the next source: " + ex);
     }
 
     private static boolean[] or(boolean[] a, boolean[] b) {

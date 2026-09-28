@@ -6,7 +6,6 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.NoSuchFileException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -97,7 +96,7 @@ public final class AutoDem {
                 GeoTiff t = new GeoTiff(new GeoTiff.Source(dir.resolve(name), null, url, http));
                 downloaded.incrementAndGet();
                 return new Rasters.Raster(t, cache);
-            } catch (NoSuchFileException e) { // no tile: open ocean
+            } catch (RemoteBytes.Missing e) { // no tile: open ocean
                 Files.createDirectories(dir);
                 Files.writeString(none, "no Copernicus tile\n");
                 missing.incrementAndGet();

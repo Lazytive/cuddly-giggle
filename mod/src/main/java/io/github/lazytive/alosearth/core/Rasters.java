@@ -36,17 +36,38 @@ public final class Rasters {
             this.maxBytes = maxBytes;
         }
 
+        private final Map<Key, java.util.concurrent.CompletableFuture<GeoTiff.Segment>> loading =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
         public GeoTiff.Segment get(GeoTiff t, int idx) {
             Key k = new Key(t, idx);
             synchronized (this) {
                 GeoTiff.Segment s = map.get(k);
                 if (s != null) return s;
             }
+            // one thread decodes (and maybe downloads) a segment; others wait for it
+            var mine = new java.util.concurrent.CompletableFuture<GeoTiff.Segment>();
+            var running = loading.putIfAbsent(k, mine);
+            if (running != null) {
+                try {
+                    return running.join();
+                } catch (java.util.concurrent.CompletionException e) {
+                    throw e.getCause() instanceof RuntimeException re ? re : new UncheckedIOException(
+                        e.getCause() instanceof IOException io ? io : new IOException(e.getCause()));
+                }
+            }
             GeoTiff.Segment s;
             try {
                 s = t.decode(idx);
+                mine.complete(s);
             } catch (IOException e) {
+                mine.completeExceptionally(e);
                 throw new UncheckedIOException(e);
+            } catch (RuntimeException e) {
+                mine.completeExceptionally(e);
+                throw e;
+            } finally {
+                loading.remove(k, mine);
             }
             synchronized (this) {
                 if (map.put(k, s) == null) bytes += s.bytes();

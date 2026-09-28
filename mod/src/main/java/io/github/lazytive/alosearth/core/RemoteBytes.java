@@ -7,7 +7,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
@@ -25,8 +24,18 @@ final class RemoteBytes {
     private final Path dir;
     private final HttpClient http;
     private final byte[] head;
+    /** Downloads in flight, so threads needing the same piece share one request. */
+    private final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<byte[]>> inFlight =
+        new java.util.concurrent.ConcurrentHashMap<>();
 
-    /** @throws NoSuchFileException if the file does not exist on the server */
+    /** Thrown when the file does not exist on the server (open ocean for the DEM). */
+    static final class Missing extends IOException {
+        Missing(String what) {
+            super("not on server: " + what);
+        }
+    }
+
+    /** @throws Missing if the file does not exist on the server */
     RemoteBytes(URI url, Path dir, HttpClient http) throws IOException {
         this.url = url;
         this.dir = dir;
@@ -43,16 +52,29 @@ final class RemoteBytes {
 
     ByteBuffer read(long off, int len) throws IOException {
         if (off + len <= head.length) return ByteBuffer.wrap(head, (int) off, len).slice();
-        Path piece = dir.resolve(off + "-" + len + ".bin");
-        byte[] data;
-        if (Files.exists(piece)) {
-            data = Files.readAllBytes(piece);
-        } else {
-            data = fetch(off, len, false);
-            if (data.length != len) throw new IOException("short read from " + url + " at " + off);
-            write(piece, data);
+        String key = off + "-" + len;
+        Path piece = dir.resolve(key + ".bin");
+        if (Files.exists(piece)) return ByteBuffer.wrap(Files.readAllBytes(piece));
+        java.util.concurrent.CompletableFuture<byte[]> mine = new java.util.concurrent.CompletableFuture<>();
+        java.util.concurrent.CompletableFuture<byte[]> running = inFlight.putIfAbsent(key, mine);
+        if (running != null) {
+            try {
+                return ByteBuffer.wrap(running.join());
+            } catch (java.util.concurrent.CompletionException e) {
+                throw e.getCause() instanceof IOException io ? io : new IOException(e.getCause());
+            }
         }
-        return ByteBuffer.wrap(data);
+        try {
+            byte[] data = fetch(off, len, false);
+            write(piece, data);
+            mine.complete(data);
+            return ByteBuffer.wrap(data);
+        } catch (IOException | RuntimeException e) {
+            mine.completeExceptionally(e);
+            throw e;
+        } finally {
+            inFlight.remove(key, mine);
+        }
     }
 
     private byte[] fetch(long off, int len, boolean allowShort) throws IOException {
@@ -67,7 +89,7 @@ final class RemoteBytes {
             throw new IOException("interrupted", e);
         }
         int code = resp.statusCode();
-        if (code == 404 || code == 403) throw new NoSuchFileException(url.toString());
+        if (code == 404 || code == 403) throw new Missing(url.toString());
         byte[] body = resp.body();
         if (code == 200) { // server ignored the range: take the slice we asked for
             int end = (int) Math.min(body.length, off + len);
@@ -85,8 +107,14 @@ final class RemoteBytes {
     }
 
     private static void write(Path file, byte[] data) throws IOException {
-        Path tmp = file.resolveSibling(file.getFileName() + ".part");
+        Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().getId() + "."
+            + System.nanoTime() + ".part");
         Files.write(tmp, data);
-        Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        try {
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException e) {
+            Files.deleteIfExists(tmp);
+            if (!Files.exists(file)) throw e; // someone else saved the same piece: fine
+        }
     }
 }
