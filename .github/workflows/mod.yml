@@ -52,15 +52,6 @@ jobs:
             | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
           echo "Immersive Portals version id $ipv"
           echo "ORG_GRADLE_PROJECT_immersive_portals_version=$ipv" >> "$GITHUB_ENV"
-          # what Immersive Portals needs at runtime (only for the self-test below)
-          deps=""
-          for slug in dimlib midnightlib cloth-config; do
-            id=$(curl -sSf "https://api.modrinth.com/v2/project/$slug/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D" \
-              | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
-            echo "$slug version id $id"
-            deps="$deps${deps:+,}$slug:$id"
-          done
-          echo "ORG_GRADLE_PROJECT_immersive_portals_runtime=$deps" >> "$GITHUB_ENV"
           dhv=$(curl -sSf 'https://api.modrinth.com/v2/project/distanthorizons/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D' \
             | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
           echo "Distant Horizons version id $dhv"
@@ -122,10 +113,19 @@ jobs:
           ALOSEARTH_SELFTEST: "1"
         run: |
           rm -rf run/world run/alosearth-selftest.txt
+          # Immersive Portals' own dependencies go straight into the mods folder (Fabric Loader
+          # remaps them at startup), since some are built with a newer Loom than this project uses
+          mkdir -p run/mods
+          for slug in dimlib midnightlib cloth-config; do
+            url=$(curl -sSf "https://api.modrinth.com/v2/project/$slug/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D" \
+              | python3 -c "import json,sys; v=json.load(sys.stdin)[0]; f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url']); print(v['version_number'], file=sys.stderr)")
+            curl -sSfL -o "run/mods/$slug.jar" "$url"
+          done
           timeout 1500 ./gradlew runServer --stacktrace -Pwith_immersive_portals=true -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
           cat run/alosearth-selftest.txt
           grep -q "Immersive Portals: seam portals match" run/alosearth-selftest.txt
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          rm -rf run/mods
 
       - name: Run the in-game self-test on a 1:10 world
         env:

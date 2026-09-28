@@ -28,10 +28,6 @@ dependencies {
     modCompileOnly "maven.modrinth:distanthorizons:${project.distant_horizons_version}"
     if (project.findProperty("with_immersive_portals") == "true") {
         modLocalRuntime "maven.modrinth:immersiveportals:${project.immersive_portals_version}"
-        // its own dependencies (DimLib, MidnightLib, Cloth Config), as "slug:version,..."
-        project.findProperty("immersive_portals_runtime").toString().split(",").findAll { it }.each {
-            modLocalRuntime "maven.modrinth:${it}"
-        }
     }
 }
 
