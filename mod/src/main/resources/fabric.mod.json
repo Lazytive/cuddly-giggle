@@ -29,6 +29,7 @@
     "alosearth.mixins.json"
   ],
   "suggests": {
-    "immersive_portals": "*"
+    "immersive_portals": "*",
+    "distanthorizons": "*"
   }
 }

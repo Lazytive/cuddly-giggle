@@ -45,13 +45,21 @@ jobs:
           echo "FABRIC_VERSION=$fabric" >> "$GITHUB_ENV"
           echo "LOADER_VERSION=$loader" >> "$GITHUB_ENV"
 
-      - name: Look up Immersive Portals for Minecraft 1.21.1 (optional integration)
+      - name: Look up Immersive Portals and Distant Horizons for Minecraft 1.21.1 (optional integrations)
         run: |
           set -euo pipefail
           ipv=$(curl -sSf 'https://api.modrinth.com/v2/project/immersiveportals/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D' \
             | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
           echo "Immersive Portals version id $ipv"
           echo "ORG_GRADLE_PROJECT_immersive_portals_version=$ipv" >> "$GITHUB_ENV"
+          dlv=$(curl -sSf 'https://api.modrinth.com/v2/project/dimlib/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D' \
+            | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
+          echo "DimLib (needed by Immersive Portals) version id $dlv"
+          echo "ORG_GRADLE_PROJECT_dimlib_version=$dlv" >> "$GITHUB_ENV"
+          dhv=$(curl -sSf 'https://api.modrinth.com/v2/project/distanthorizons/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D' \
+            | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
+          echo "Distant Horizons version id $dhv"
+          echo "ORG_GRADLE_PROJECT_distant_horizons_version=$dhv" >> "$GITHUB_ENV"
 
       - name: Build and run core tests
         env:

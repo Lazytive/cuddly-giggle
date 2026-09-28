@@ -24,6 +24,7 @@ public final class SeamHandler {
     }
 
     private static final int PRELOAD_DISTANCE = 96;
+    private static final boolean SEAMLESS = EarthConfig.load().seamless_edges;
 
     public static void tick(ServerLevel level) {
         if (!(level.getChunkSource().getGenerator() instanceof EarthChunkGenerator gen)) return;
@@ -34,7 +35,7 @@ public final class SeamHandler {
             if (p.faceAt(e.getX(), e.getZ()) != null) continue;
             // with Immersive Portals the seam portals carry players across (their client moves them);
             // only step in for someone well past the edge, in case something slipped through
-            if (AlosEarth.IMMERSIVE_PORTALS && e instanceof ServerPlayer && p.distanceToSeam(e.getX(), e.getZ()) < 32) continue;
+            if (AlosEarth.IMMERSIVE_PORTALS && SEAMLESS && e instanceof ServerPlayer && p.distanceToSeam(e.getX(), e.getZ()) < 32) continue;
             movers.add(e);
         }
         for (Entity e : movers) cross(level, p, e);

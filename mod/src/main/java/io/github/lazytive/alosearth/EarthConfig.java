@@ -25,6 +25,8 @@ public final class EarthConfig {
     /** Download Copernicus 30 m elevation for areas with no installed tiles. */
     public boolean auto_download = true;
     public String auto_download_dir = "alosearth-data/auto";
+    /** With Immersive Portals installed: see-through portals on the globe's seams. */
+    public boolean seamless_edges = true;
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 

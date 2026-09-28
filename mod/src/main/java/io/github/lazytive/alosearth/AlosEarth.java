@@ -20,6 +20,8 @@ public final class AlosEarth implements ModInitializer {
     public static final Logger LOG = LoggerFactory.getLogger("ALOS Earth");
     /** Immersive Portals installed: the seams become see-through portals. */
     public static final boolean IMMERSIVE_PORTALS = net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("immersive_portals");
+    /** Distant Horizons installed: its far-away terrain comes straight from the terrain model. */
+    public static final boolean DISTANT_HORIZONS = net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("distanthorizons");
 
     private static volatile DataSources data;
     private static final Map<EarthSettings, Terrain> TERRAINS = new ConcurrentHashMap<>();
@@ -41,6 +43,13 @@ public final class AlosEarth implements ModInitializer {
                 ThroughTheEarth.tick(level, gen);
             }
         });
+        if (DISTANT_HORIZONS) {
+            try {
+                io.github.lazytive.alosearth.compat.DistantHorizonsEarth.register();
+            } catch (Throwable e) {
+                LOG.warn("Distant Horizons integration unavailable: {}", e.toString());
+            }
+        }
         CommandRegistrationCallback.EVENT.register((dispatcher, registries, environment) -> EarthCommands.register(dispatcher));
         // snow by real altitude: the overworld's settings, from when it loads (before its spawn area generates)
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents.LOAD.register((server, level) -> {
@@ -51,7 +60,13 @@ public final class AlosEarth implements ModInitializer {
         });
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> EarthClimate.active = null);
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
-            if (IMMERSIVE_PORTALS) io.github.lazytive.alosearth.compat.ImmersivePortalsSeams.setUp(server);
+            if (IMMERSIVE_PORTALS) {
+                try {
+                    io.github.lazytive.alosearth.compat.ImmersivePortalsSeams.setUp(server, EarthConfig.load().seamless_edges);
+                } catch (Throwable e) {
+                    LOG.warn("Immersive Portals integration unavailable: {}", e.toString());
+                }
+            }
             if (SelfTest.enabled()) SelfTest.run(server);
         });
     }

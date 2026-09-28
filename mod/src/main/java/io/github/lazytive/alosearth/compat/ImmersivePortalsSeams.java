@@ -23,12 +23,16 @@ public final class ImmersivePortalsSeams {
 
     public static final String TAG = "alosearth:seam";
 
-    /** (Re)creates the seam portals in every ALOS Earth level. */
-    public static void setUp(MinecraftServer server) {
+    /** (Re)creates the seam portals in every ALOS Earth level, or removes them when turned off. */
+    public static void setUp(MinecraftServer server, boolean enabled) {
         for (ServerLevel level : server.getAllLevels()) {
             if (!(level.getChunkSource().getGenerator() instanceof EarthChunkGenerator gen)) continue;
             GlobalPortalStorage storage = GlobalPortalStorage.get(level);
             storage.removePortals(p -> TAG.equals(p.portalTag));
+            if (!enabled) {
+                storage.onDataChanged();
+                continue;
+            }
             int n = 0;
             for (CubeProjection.Link l : gen.terrain().projection.links) {
                 storage.addPortal(create(level, l));

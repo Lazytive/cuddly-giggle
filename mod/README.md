@@ -275,7 +275,22 @@ becomes a see‑through portal the height of the world:
 * you walk over it with no teleport jump;
 * your heading carries on.
 The mod places these portals each time the server starts, and
-`/earth whereami` still shows where you really are.
+`/earth whereami` still shows where you really are. To turn them off, set
+`"seamless_edges": false` in `config/alosearth.json`; the seams then go back
+to the short teleport.
+
+**Distant Horizons (optional).** Install
+[Distant Horizons](https://modrinth.com/mod/distanthorizons) for 1.21.1 and
+ALOS Earth supplies its far-away terrain directly from the elevation model:
+* ground, water and snow;
+* a leaf canopy over forests.
+
+This is much faster than letting Distant Horizons run the full world
+generator, so mountain ranges hundreds of kilometres away show up quickly.
+Chunks you have actually visited still use their real blocks.
+
+Immersive Portals and Distant Horizons are known not to render well
+together. If you use both, set `"seamless_edges": false`.
 
 Known limits:
 * Your coordinates jump when you cross a seam. (Immersive Portals makes the
