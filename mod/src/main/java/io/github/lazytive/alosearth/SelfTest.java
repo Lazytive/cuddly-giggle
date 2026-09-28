@@ -79,7 +79,70 @@ final class SelfTest {
         int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
         notes.add("Fuji summit column top y=" + top);
         if (top < t.settings.seaLevel() + 200) errors.add("Fuji is not a mountain: top " + top);
+        // the sea floor is downloaded too: the Japan Trench is ~6.8 km deep
+        t.projection.forward(143.9, 38.0, p);
+        x = (int) Math.floor(p[0]);
+        z = (int) Math.floor(p[1]);
+        int floor = t.top(x, z);
+        notes.add("Japan Trench floor y=" + floor + " (" + EarthCommands.elevation(gen, floor) + ")");
+        if (!t.settings.seaFloor()) errors.add("new worlds should use the downloaded sea floor");
+        else if (floor > t.settings.seaLevel() - t.settings.oceanBlocks(5000)) errors.add("ocean is too shallow: floor " + floor);
         notes.add("data: " + t.data.describe());
+    }
+
+    private static void checkLayers(MinecraftServer server, ServerLevel level, EarthChunkGenerator gen, Terrain t,
+                                    List<String> errors, List<String> notes) {
+        int shift = t.settings.layerShift();
+        for (int k = 1; k <= t.settings.deepLayers(); k++) {
+            ServerLevel deep = LayerHandler.level(server, gen, k);
+            if (deep == null) {
+                errors.add("deep layer " + k + " missing");
+                return;
+            }
+            if (deep.getMinBuildHeight() != t.settings.minY() || deep.getMaxBuildHeight() != t.settings.maxY()) {
+                errors.add("deep layer " + k + " height " + deep.getMinBuildHeight() + ".." + deep.getMaxBuildHeight());
+            }
+        }
+        ServerLevel deep1 = LayerHandler.level(server, gen, 1);
+        EarthChunkGenerator g1 = (EarthChunkGenerator) deep1.getChunkSource().getGenerator();
+        double[] p = new double[2];
+        t.projection.forward(-12.857, -4, p); // ~2.5 km deep in the synthetic ocean
+        int x = (int) Math.floor(p[0]), z = (int) Math.floor(p[1]);
+        int floor = t.top(x, z);
+        notes.add("deep sea floor at virtual y " + floor + " (" + EarthCommands.elevation(gen, floor) + ")");
+        if (floor >= level.getMinBuildHeight()) errors.add("synthetic deep ocean is not below the main world: " + floor);
+        level.getChunk(x >> 4, z >> 4);
+        deep1.getChunk(x >> 4, z >> 4);
+        int local = floor + g1.offset;
+        Block want = gen.states()[t.block(x, floor, z)].getBlock();
+        Block got = deep1.getBlockState(new BlockPos(x, local, z)).getBlock();
+        Block above = deep1.getBlockState(new BlockPos(x, local + 1, z)).getBlock();
+        Block main = level.getBlockState(new BlockPos(x, level.getMinBuildHeight(), z)).getBlock();
+        Block overlap = deep1.getBlockState(new BlockPos(x, level.getMinBuildHeight() + shift, z)).getBlock();
+        notes.add("deep layer 1 floor " + got + ", above it " + above + "; main world bottom " + main + " = layer 1 " + overlap);
+        if (got != want || above != net.minecraft.world.level.block.Blocks.WATER) errors.add("deep layer 1 sea floor is wrong");
+        if (main != net.minecraft.world.level.block.Blocks.WATER || overlap != main) errors.add("layers do not overlap seamlessly");
+        int top = deep1.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR, x, z) - 1;
+        if (top != local) errors.add("deep layer heightmap " + top + ", expected " + local);
+
+        // a pig sinking past the main world's floor arrives in layer 1 at the same place
+        Pig pig = EntityType.PIG.create(level);
+        pig.moveTo(x + 0.5, level.getMinBuildHeight() + 10.5, z + 0.5, 0f, 0f);
+        level.addFreshEntity(pig);
+        LayerHandler.tick(level, gen);
+        List<Pig> found = deep1.getEntitiesOfClass(Pig.class, new net.minecraft.world.phys.AABB(new BlockPos(x, level.getMinBuildHeight() + 10 + shift, z)).inflate(2));
+        if (found.isEmpty()) errors.add("pig did not sink into deep layer 1");
+        else {
+            Pig moved = found.get(0);
+            LayerHandler.tick(deep1, g1); // not yet near the top of layer 1: stays
+            if (moved.level() != deep1 || moved.isRemoved()) errors.add("pig bounced straight back up");
+            moved.moveTo(moved.getX(), deep1.getMaxBuildHeight() - 5, moved.getZ());
+            LayerHandler.tick(deep1, g1);
+            boolean back = !level.getEntitiesOfClass(Pig.class, new net.minecraft.world.phys.AABB(
+                new BlockPos(x, deep1.getMaxBuildHeight() - 5 - shift, z)).inflate(2)).isEmpty();
+            if (!back) errors.add("pig did not rise back into the main world");
+            notes.add("pig crossed the layer join both ways");
+        }
     }
 
     private static void check(MinecraftServer server, List<String> errors, List<String> notes) {
@@ -192,6 +255,9 @@ final class SelfTest {
             pig.discard();
         }
         notes.add("seams checked: " + pr.links.length);
+
+        // 4. 1:1 worlds: the ocean carries on through the deep layers, and things sink into them
+        if (t.settings.deepLayers() > 0) checkLayers(server, level, gen, t, errors, notes);
 
         // 4. commands are registered
         if (server.getCommands().getDispatcher().getRoot().getChild("earth") == null) errors.add("/earth missing");

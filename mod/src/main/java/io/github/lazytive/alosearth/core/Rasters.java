@@ -137,6 +137,55 @@ public final class Rasters {
             return (int) pixel(r, c);
         }
 
+        /**
+         * Catmull-Rom bicubic: smooth when one data pixel spans many blocks
+         * (1:1 worlds). Falls back to bilinear next to nodata.
+         */
+        public double cubic(double lon, double lat, double nodata) {
+            int h = tiff.height, w = tiff.width;
+            double fr = clamp(row(lat), 0, h - 1), fc = clamp(col(lon), 0, w - 1);
+            int r1 = (int) Math.floor(fr), c1 = (int) Math.floor(fc);
+            double tr = fr - r1, tc = fc - c1;
+            double[] rows = new double[4];
+            for (int i = 0; i < 4; i++) {
+                int r = Math.max(0, Math.min(h - 1, r1 - 1 + i));
+                double[] v = new double[4];
+                for (int j = 0; j < 4; j++) {
+                    int c = Math.max(0, Math.min(w - 1, c1 - 1 + j));
+                    v[j] = pixel(r, c);
+                    if (v[j] == nodata) return bilinear(lon, lat, nodata);
+                }
+                rows[i] = catmullRom(v, tc);
+            }
+            return catmullRom(rows, tr);
+        }
+
+        private static double catmullRom(double[] p, double t) {
+            return 0.5 * (2 * p[1] + (-p[0] + p[2]) * t + (2 * p[0] - 5 * p[1] + 4 * p[2] - p[3]) * t * t
+                + (-p[0] + 3 * p[1] - 3 * p[2] + p[3]) * t * t * t);
+        }
+
+        /**
+         * AW3D30 mask class with smooth borders: each class's share of the four
+         * surrounding pixels, weighted bilinearly; the largest share wins.
+         */
+        int smoothClass(double lon, double lat) {
+            int h = tiff.height, w = tiff.width;
+            double fr = clamp(row(lat), 0, h - 1), fc = clamp(col(lon), 0, w - 1);
+            int r0 = (int) Math.floor(fr), c0 = (int) Math.floor(fc);
+            int r1 = Math.min(r0 + 1, h - 1), c1 = Math.min(c0 + 1, w - 1);
+            double tr = fr - r0, tc = fc - c0;
+            double[] share = new double[4];
+            share[(int) pixel(r0, c0) & 3] += (1 - tr) * (1 - tc);
+            share[(int) pixel(r0, c1) & 3] += (1 - tr) * tc;
+            share[(int) pixel(r1, c0) & 3] += tr * (1 - tc);
+            share[(int) pixel(r1, c1) & 3] += tr * tc;
+            double land = share[0] + share[1];
+            if (share[3] >= land && share[3] >= share[2]) return 3;
+            if (share[2] >= land) return 2;
+            return 0;
+        }
+
         /** Bilinear with nearest-neighbour fallback next to nodata (NaN if that is nodata too). */
         public double bilinear(double lon, double lat, double nodata) {
             int h = tiff.height, w = tiff.width;
@@ -256,6 +305,11 @@ public final class Rasters {
 
         /** Writes {elevation metres (NaN if none), class} into out. */
         public void sample(double lon, double lat, double[] out) {
+            sample(lon, lat, out, false);
+        }
+
+        /** As {@link #sample(double, double, double[])}; {@code smooth} for fine scales (bicubic, soft mask). */
+        public void sample(double lon, double lat, double[] out, boolean smooth) {
             lon = normLon(lon);
             int k = key((int) Math.floor(lat), (int) Math.floor(lon));
             GeoTiff.Source ds = dsm.get(k);
@@ -265,14 +319,14 @@ public final class Rasters {
             try {
                 Raster d = new Raster(files.get(ds), cache);
                 double nodata = Double.isNaN(d.tiff.nodata) ? -9999 : d.tiff.nodata;
-                double e = d.bilinear(lon, lat, nodata);
+                double e = smooth ? d.cubic(lon, lat, nodata) : d.bilinear(lon, lat, nodata);
                 if (e < -1000) e = Double.NaN;
                 out[0] = e;
                 GeoTiff.Source ms = msk.get(k);
                 if (ms != null) {
                     Raster m = new Raster(files.get(ms), cache);
                     if (m.tiff.width == d.tiff.width && m.tiff.height == d.tiff.height) {
-                        int c = m.nearestRaw(lon, lat) & 3;
+                        int c = smooth ? m.smoothClass(lon, lat) : m.nearestRaw(lon, lat) & 3;
                         out[1] = c == 3 ? CLS_SEA : c == 2 ? CLS_LAKE : CLS_LAND;
                         return;
                     }
@@ -329,9 +383,13 @@ public final class Rasters {
         }
 
         public double bilinear(double lon, double lat) {
+            return sample(lon, lat, false);
+        }
+
+        public double sample(double lon, double lat, boolean smooth) {
             lon = normLon(lon);
             for (Raster r : candidates(lon, lat)) {
-                if (r.covers(lon, lat)) return r.bilinear(lon, lat, r.tiff.nodata);
+                if (r.covers(lon, lat)) return smooth ? r.cubic(lon, lat, r.tiff.nodata) : r.bilinear(lon, lat, r.tiff.nodata);
             }
             return Double.NaN;
         }

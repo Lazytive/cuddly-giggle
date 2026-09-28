@@ -12,7 +12,6 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,7 +33,10 @@ public final class AlosEarth implements ModInitializer {
         Registry.register(BuiltInRegistries.BIOME_SOURCE, id("earth"), EarthBiomeSource.CODEC);
 
         ServerTickEvents.END_WORLD_TICK.register(level -> {
-            if (level.dimension() == Level.OVERWORLD) SeamHandler.tick(level);
+            if (level.getChunkSource().getGenerator() instanceof EarthChunkGenerator gen) {
+                SeamHandler.tick(level);
+                LayerHandler.tick(level, gen);
+            }
         });
         CommandRegistrationCallback.EVENT.register((dispatcher, registries, environment) -> EarthCommands.register(dispatcher));
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {

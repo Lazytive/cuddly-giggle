@@ -88,6 +88,12 @@ public final class EarthCommands {
         return null;
     }
 
+    /** "812 m above sea level" / "4210 m below sea level" for a y in this generator's layer. */
+    static String elevation(EarthChunkGenerator g, double y) {
+        double m = g.settings.metersAt(g.virtualY(y));
+        return String.format(Locale.ROOT, "%.0f m %s sea level", Math.abs(m), m >= 0 ? "above" : "below");
+    }
+
     private static int whereami(CommandContext<CommandSourceStack> c) {
         EarthChunkGenerator g = generator(c.getSource());
         if (g == null) return 0;
@@ -99,6 +105,7 @@ public final class EarthCommands {
         if (kind != CubeProjection.OUTSIDE) {
             double[] dist = t.projection.distortion(ll[0], ll[1]);
             text += String.format(Locale.ROOT, ", biome %s, 1 block = %.0f-%.0f m", t.biome(x, z), dist[0], dist[1]);
+            text += ", you are " + elevation(g, c.getSource().getPosition().y) + (g.layer > 0 ? " (deep layer " + g.layer + ")" : "");
         }
         String msg = text;
         c.getSource().sendSuccess(() -> Component.literal(msg), false);
@@ -123,7 +130,9 @@ public final class EarthCommands {
         t.projection.forward(lon, lat, p);
         int x = (int) Math.floor(p[0]), z = (int) Math.floor(p[1]);
         int y = t.surface(x, z) + 1;
-        player.teleportTo(c.getSource().getLevel(), x + 0.5, y, z + 0.5, player.getYRot(), player.getXRot());
+        ServerLevel level = g.layer == 0 ? c.getSource().getLevel() : LayerHandler.level(c.getSource().getServer(), g, 0);
+        if (level == null) level = c.getSource().getLevel();
+        player.teleportTo(level, x + 0.5, y, z + 0.5, player.getYRot(), player.getXRot());
         String label = name != null ? name : String.format(Locale.ROOT, "%.4f, %.4f", lat, lon);
         c.getSource().sendSuccess(() -> Component.literal("Teleported to " + label + " (" + x + " " + y + " " + z + ")"), true);
         if (!t.data.hasElevationSource(lon, lat)) {

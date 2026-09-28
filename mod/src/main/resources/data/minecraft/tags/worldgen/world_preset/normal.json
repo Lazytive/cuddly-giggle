@@ -2,6 +2,7 @@
   "replace": false,
   "values": [
     "alosearth:earth",
-    "alosearth:earth_true_scale"
+    "alosearth:earth_true_scale",
+    "alosearth:earth_1to1"
   ]
 }

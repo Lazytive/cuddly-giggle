@@ -6,18 +6,58 @@ package io.github.lazytive.alosearth.core;
  * compressed so Everest peaks near y 600. {@link #TRUE_SCALE} keeps the
  * data's real proportions: 1 block = 30 m vertically too (Everest ~y 358,
  * the Mariana Trench ~y -304) with only light detail added.
+ * {@link #ONE_TO_ONE} is 1 block = 1 m: oceans at their real depth, carried
+ * on below the world's floor by {@code deepLayers} stacked dimensions, and
+ * land 1:1 near sea level, easing off so Everest fits under the build limit.
+ *
+ * <p>All heights inside the terrain are "virtual" y: the main world's y,
+ * continued downwards through the deep layers. Layer {@code k} shows virtual
+ * y {@code localY - k * layerShift()}.
  */
 public record EarthSettings(double centerLat, double centerLon, double metersPerBlock, int margin,
                             int minY, int height, int seaLevel,
                             double landScale, double landKnee, double oceanScale, double oceanKnee,
-                            double detail, boolean trueScale) {
+                            double detail, boolean trueScale, boolean seaFloor, boolean trueOcean, int deepLayers) {
+    /** Blocks shared by two stacked layers (so the view across the join matches). */
+    public static final int LAYER_OVERLAP = 96;
+
     public static final EarthSettings DEFAULT = new EarthSettings(0.0, 24.0, 30.0, 512,
-        -128, 768, 63, 575.0, 5750.0, 60.0, 600.0, 1.0, false);
+        -128, 768, 63, 575.0, 5750.0, 60.0, 600.0, 1.0, false, false, false, 0);
     public static final EarthSettings TRUE_SCALE = new EarthSettings(0.0, 24.0, 30.0, 512,
-        -320, 704, 63, 575.0, 5750.0, 60.0, 600.0, 0.25, true);
+        -320, 704, 63, 575.0, 5750.0, 60.0, 600.0, 0.25, true, true, true, 0);
+    public static final EarthSettings ONE_TO_ONE = new EarthSettings(0.0, 24.0, 1.0, 512,
+        -2032, 4064, 63, 760.0, 760.0, 60.0, 600.0, 1.0, false, true, true, 3);
+
+    /** DEFAULT as new worlds get it (with the downloaded sea floor). */
+    public static final EarthSettings MINECRAFT_LIKE = DEFAULT.withSeaFloor(true);
+
+    public EarthSettings withSeaFloor(boolean on) {
+        return new EarthSettings(centerLat, centerLon, metersPerBlock, margin, minY, height, seaLevel, landScale,
+            landKnee, oceanScale, oceanKnee, detail, trueScale, on, trueOcean, deepLayers);
+    }
+
+    public EarthSettings withCenter(double lat, double lon) {
+        return new EarthSettings(lat, lon, metersPerBlock, margin, minY, height, seaLevel, landScale,
+            landKnee, oceanScale, oceanKnee, detail, trueScale, seaFloor, trueOcean, deepLayers);
+    }
 
     public int maxY() {
         return minY + height;
+    }
+
+    /** How far down each deep layer is shifted from the one above it. */
+    public int layerShift() {
+        return height - LAYER_OVERLAP;
+    }
+
+    /** The lowest virtual y (bottom of the deepest layer); bedrock is here. */
+    public int bottomY() {
+        return minY - deepLayers * layerShift();
+    }
+
+    /** True when one data pixel spans many blocks (smooth interpolation, finer detail). */
+    public boolean fine() {
+        return metersPerBlock < 10;
     }
 
     /** Blocks above sea level for an elevation in metres (negative below). */
@@ -27,9 +67,17 @@ public record EarthSettings(double centerLat, double centerLon, double metersPer
         return meters < 0 ? -b : b;
     }
 
+    /** Real elevation in metres for a virtual y (inverse of the height curves; negative is under the sea). */
+    public double metersAt(double y) {
+        double b = y - seaLevel;
+        if (b >= 0) return trueScale ? b * metersPerBlock : landKnee * Math.expm1(b / landScale);
+        if (trueScale || trueOcean) return b * metersPerBlock;
+        return -oceanKnee * Math.expm1(-b / oceanScale);
+    }
+
     /** Blocks of water for a depth in metres. */
     public double oceanBlocks(double depthMeters) {
-        if (trueScale) return Math.max(0, depthMeters) / metersPerBlock;
+        if (trueScale || trueOcean) return Math.max(0, depthMeters) / metersPerBlock;
         return oceanScale * Math.log1p(Math.max(0, depthMeters) / oceanKnee);
     }
 }

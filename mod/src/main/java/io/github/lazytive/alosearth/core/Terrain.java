@@ -22,6 +22,8 @@ public final class Terrain {
     private final Noise detailNoise = new Noise(SEED), ridgeNoise = new Noise(SEED + 1),
         patchNoise = new Noise(SEED + 2), styleNoise = new Noise(SEED + 3);
     private final double radius;
+    /** Size of real-world features relative to the 1:30 design scale (1 at 30 m per block, 30 at 1:1). */
+    private final double scale;
     private final Map<Long, Tile> cache = new LinkedHashMap<>(256, 0.75f, true);
 
     /** One 64x64 tile of columns, indexed [z * 64 + x] relative to the tile corner. */
@@ -70,6 +72,7 @@ public final class Terrain {
         this.projection = new CubeProjection(settings.metersPerBlock(), settings.centerLat(), settings.centerLon(),
             settings.margin());
         this.radius = projection.size * 2 / Math.PI;
+        this.scale = 30.0 / settings.metersPerBlock();
     }
 
     // ------------------------------------------------------------ queries
@@ -169,8 +172,14 @@ public final class Terrain {
         return b == BAND ? BANDS[Math.floorMod(y, BANDS.length)] : b;
     }
 
+    /** Virtual y below which a column is plain rock (stone/deepslate/bedrock only). */
+    public static int deepStart(Tile t, int i) {
+        int[] st = STYLES[t.style[i]];
+        return t.top[i] - st[2] - st[4];
+    }
+
     private int deep(int x, int y, int z) {
-        int minY = settings.minY();
+        int minY = settings.bottomY();
         if (y <= minY) return BEDROCK;
         int k = y - minY;
         if (k < 5 && Math.floorMod(hash(x, y, z), 5) < 5 - k) return BEDROCK;
@@ -294,6 +303,7 @@ public final class Terrain {
         final EarthSettings s = settings;
         final int sea = s.seaLevel();
         final int x0 = tx * TILE - BORDER, z0 = tz * TILE - BORDER;
+        final boolean fine = s.fine();
 
         double[] lat = new double[nn], elev = new double[nn], depth = new double[nn];
         double[] px = new double[nn], py = new double[nn], pz = new double[nn];
@@ -323,7 +333,7 @@ public final class Terrain {
             // Data problems (a corrupt file, a network error) must never break
             // world generation: that column just falls through to the next source.
             try {
-                data.aw3d30.sample(lon, la, smp);
+                data.aw3d30.sample(lon, la, smp, fine);
                 e = smp[0];
                 c = (int) smp[1];
             } catch (RuntimeException ex) {
@@ -331,7 +341,7 @@ public final class Terrain {
             }
             if (Double.isNaN(e) && !data.fillDem.isEmpty()) {
                 try {
-                    e = data.fillDem.bilinear(lon, la);
+                    e = data.fillDem.sample(lon, la, fine);
                     c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
                 } catch (RuntimeException ex) {
                     dataError(ex);
@@ -339,7 +349,7 @@ public final class Terrain {
             }
             if (Double.isNaN(e) && data.autoDem != null) {
                 try {
-                    e = data.autoDem.bilinear(lon, la);
+                    e = data.autoDem.sample(lon, la, fine);
                     c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
                 } catch (RuntimeException ex) {
                     dataError(ex);
@@ -347,7 +357,13 @@ public final class Terrain {
             }
             if ((Double.isNaN(e) || c == Rasters.CLS_SEA) && !data.bathymetry.isEmpty()) {
                 try {
-                    b = data.bathymetry.bilinear(lon, la);
+                    b = data.bathymetry.sample(lon, la, fine);
+                } catch (RuntimeException ex) {
+                    dataError(ex);
+                }
+            } else if ((Double.isNaN(e) || c == Rasters.CLS_SEA) && s.seaFloor() && data.seaFloor != null) {
+                try {
+                    b = data.seaFloor.sample(lon, la, fine);
                 } catch (RuntimeException ex) {
                     dataError(ex);
                 }
@@ -386,14 +402,17 @@ public final class Terrain {
             double coastFade = Math.max(0, Math.min(1, base[i] / 6));
             double mountain = smoothstep(s.landBlocks(1000), s.landBlocks(3500), base[i]);
             double ridged = 1 - Math.abs(ridgeNoise.fbm(px[i], py[i], pz[i], 150, 2)) * 2.2;
-            h[i] = base[i] + s.detail() * (bumps * coastFade * (1 + 1.5 * mountain) + ridged * 14 * mountain);
+            double d = bumps * coastFade * (1 + 1.5 * mountain) + ridged * 14 * mountain;
+            // 1:1: a data pixel spans ~30 blocks, so add texture below that size
+            if (fine) d += detailNoise.fbm(px[i] + 3000, py[i], pz[i], 9, 2) * coastFade * (0.6 + 2.5 * mountain);
+            h[i] = base[i] + s.detail() * d;
         }
 
         float[] distLand = distance(or(isLand, isLake));
         float[] distSea = distance(isSea);
 
         int[] top = new int[nn], water = new int[nn];
-        int minTop = s.minY() + 1, maxTop = s.maxY() - 1;
+        int minTop = s.bottomY() + 1, maxTop = s.maxY() - 1;
         for (int i = 0; i < nn; i++) {
             water[i] = Integer.MIN_VALUE;
             if (isSea[i]) {
@@ -401,8 +420,11 @@ public final class Terrain {
                 double dl = distLand[i] / (double) BORDER;
                 if (!Double.isNaN(depth[i])) d = s.oceanBlocks(depth[i]);
                 else d = 3 + 27 * smoothstep(0, 1, dl);
-                d = Math.min(d, 2 + dl * dl * 200);
+                if (dl < 1) d = Math.min(d, 2 + dl * dl * 200); // shelve off right next to the coast
                 d = Math.max(2, d);
+                if (s.seaFloor() && d > 6) { // a little relief on the (smooth, ~1 km) sea-floor data
+                    d += detailNoise.fbm(px[i], py[i] + 7000, pz[i], 48, 3) * Math.min(12, 1 + d * 0.01);
+                }
                 top[i] = sea - (int) Math.round(d);
                 water[i] = sea;
             } else if (isLake[i]) {
@@ -460,7 +482,13 @@ public final class Terrain {
                 int i = (zz + BORDER) * n + (xx + BORDER);
                 int o = zz * TILE + xx;
                 int slope = 0;
-                for (int j : new int[] {i - 1, i + 1, i - n, i + n}) slope = Math.max(slope, Math.abs(surf[i] - surf[j]));
+                if (fine) { // blocks per block over a few blocks, scaled so 4 is a 45 degree face
+                    int m = 0;
+                    for (int j : new int[] {i - 3, i + 3, i - 3 * n, i + 3 * n}) m = Math.max(m, Math.abs(surf[i] - surf[j]));
+                    slope = (int) Math.round(m * 4 / 3.0);
+                } else {
+                    for (int j : new int[] {i - 1, i + 1, i - n, i + n}) slope = Math.max(slope, Math.abs(surf[i] - surf[j]));
+                }
                 t.top[o] = top[i];
                 t.water[o] = water[i];
                 classify(t, o, i, valid[i], isSea[i], lake2[i], zone[i], lat[i], base[i], h[i], slope,
@@ -485,8 +513,8 @@ public final class Terrain {
             BuiltinClimate bc = BuiltinClimate.get();
             if (bc == null) return 0;
             // wobble the lookup so the map's grid cells get natural borders
-            double jx = patchNoise.fbm(px + 777, py, pz, 500, 3) * 0.2;
-            double jy = patchNoise.fbm(px, py + 777, pz, 500, 3) * 0.2;
+            double jx = patchNoise.fbm(px + 777, py, pz, 500 * scale, 3) * 0.2;
+            double jy = patchNoise.fbm(px, py + 777, pz, 500 * scale, 3) * 0.2;
             double wlat = Math.max(-90, Math.min(90, la + jy));
             double wlon = lon + jx / Math.max(0.2, Math.cos(Math.toRadians(la)));
             int k = bc.at(wlon, wlat);
@@ -605,7 +633,7 @@ public final class Terrain {
         }
 
         // coasts
-        if (distSea <= 4 && h <= 3 && slope < 3 && !biome.contains("swamp")) {
+        if (distSea <= (settings.fine() ? 10 : 4) && h <= 3 && slope < 3 && !biome.contains("swamp")) {
             biome = cold(zone) ? "snowy_beach" : "beach";
             style = S_SAND;
         } else if (distSea <= 3 && slope >= 3 && h <= 20) {
@@ -617,7 +645,7 @@ public final class Terrain {
 
     private String pickBiome(Zone zone, double x, double y, double z) {
         Pick[] picks = ZONE_BIOMES.get(zone);
-        double u = patch(x, y, z, 650);
+        double u = patch(x, y, z, 650 * Math.min(3, Math.sqrt(scale)));
         int total = 0;
         for (Pick p : picks) total += p.weight;
         double acc = 0;

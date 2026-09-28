@@ -9,6 +9,9 @@ import io.github.lazytive.alosearth.core.Terrain;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.RegistryAccess;
+import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -25,6 +28,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.levelgen.GenerationStep;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.LegacyRandomSource;
@@ -54,20 +59,31 @@ public final class EarthChunkGenerator extends ChunkGenerator {
         Codec.DOUBLE.optionalFieldOf("ocean_scale", D.oceanScale()).forGetter(EarthSettings::oceanScale),
         Codec.DOUBLE.optionalFieldOf("ocean_knee", D.oceanKnee()).forGetter(EarthSettings::oceanKnee),
         Codec.DOUBLE.optionalFieldOf("detail", D.detail()).forGetter(EarthSettings::detail),
-        Codec.BOOL.optionalFieldOf("true_scale", false).forGetter(EarthSettings::trueScale)
+        Codec.BOOL.optionalFieldOf("true_scale", false).forGetter(EarthSettings::trueScale),
+        // worlds made before these existed decode with the old behaviour
+        Codec.BOOL.optionalFieldOf("sea_floor", false).forGetter(EarthSettings::seaFloor),
+        Codec.BOOL.optionalFieldOf("true_ocean", false).forGetter(EarthSettings::trueOcean),
+        Codec.intRange(0, 8).optionalFieldOf("deep_layers", 0).forGetter(EarthSettings::deepLayers)
     ).apply(i, EarthSettings::new));
 
     public static final MapCodec<EarthChunkGenerator> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
         BiomeSource.CODEC.fieldOf("biome_source").forGetter(ChunkGenerator::getBiomeSource),
-        SETTINGS_CODEC.optionalFieldOf("settings", D).forGetter(g -> g.settings)
+        SETTINGS_CODEC.optionalFieldOf("settings", D).forGetter(g -> g.settings),
+        Codec.intRange(0, 8).optionalFieldOf("layer", 0).forGetter(g -> g.layer)
     ).apply(i, i.stable(EarthChunkGenerator::new)));
 
     public final EarthSettings settings;
+    /** 0 for the main world; k for the k-th deep layer below it. */
+    public final int layer;
+    /** Virtual y = local y - offset. */
+    public final int offset;
     private volatile BlockState[] states;
 
-    public EarthChunkGenerator(BiomeSource biomeSource, EarthSettings settings) {
+    public EarthChunkGenerator(BiomeSource biomeSource, EarthSettings settings, int layer) {
         super(biomeSource);
         this.settings = settings;
+        this.layer = layer;
+        this.offset = layer * settings.layerShift();
     }
 
     public Terrain terrain() {
@@ -118,21 +134,50 @@ public final class EarthChunkGenerator extends ChunkGenerator {
         Terrain.Tile tile = t.tileAt(x0, z0);
         Heightmap oceanFloor = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.OCEAN_FLOOR_WG);
         Heightmap worldSurface = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.WORLD_SURFACE_WG);
-        for (int lz = 0; lz < 16; lz++) {
-            for (int lx = 0; lx < 16; lx++) {
-                int x = x0 + lx, z = z0 + lz;
-                int i = Terrain.index(x, z);
-                int top = Math.min(maxY, Math.max(tile.top[i], tile.water[i]));
-                LevelChunkSection section = null;
-                int sectionIndex = -1;
-                for (int y = minY; y <= top; y++) {
-                    int id = t.block(tile, i, x, y, z);
+
+        // per-column tops (in this layer's y) and what the whole chunk has in common
+        int[] idx = new int[256], surf = new int[256];
+        int maxSurf = Integer.MIN_VALUE, minDeep = Integer.MAX_VALUE, maxTop = Integer.MIN_VALUE, minWater = Integer.MAX_VALUE;
+        for (int c = 0; c < 256; c++) {
+            int i = Terrain.index(x0 + (c & 15), z0 + (c >> 4));
+            idx[c] = i;
+            surf[c] = Math.max(tile.top[i], tile.water[i]) + offset;
+            maxSurf = Math.max(maxSurf, surf[c]);
+            minDeep = Math.min(minDeep, Terrain.deepStart(tile, i) + offset);
+            maxTop = Math.max(maxTop, tile.top[i] + offset);
+            minWater = Math.min(minWater, tile.water[i] + offset);
+        }
+        int bedrockTop = t.settings.bottomY() + offset + 5;
+        LevelChunkSection[] sections = chunk.getSections();
+        BlockState lastUniform = null;
+        int lastUniformTop = 0;
+        for (int si = 0; si < sections.length; si++) {
+            int y0 = chunk.getSectionYFromSectionIndex(si) << 4, y1 = y0 + 15;
+            if (y0 > maxSurf || y0 > maxY) break;
+            // whole sections of one block (deep rock, open water) are made in one go
+            BlockState uniform = null;
+            if (y1 < minDeep && y0 > bedrockTop) {
+                int v0 = y0 - offset;
+                if (v0 >= 8) uniform = st[Palette.STONE];
+                else if (v0 + 15 < 0) uniform = st[Palette.DEEPSLATE];
+            } else if (y0 > maxTop && y1 <= minWater) {
+                uniform = st[Palette.WATER];
+            }
+            if (uniform != null) {
+                sections[si] = new LevelChunkSection(
+                    new PalettedContainer<>(Block.BLOCK_STATE_REGISTRY, uniform, PalettedContainer.Strategy.SECTION_STATES),
+                    sections[si].getBiomes());
+                lastUniform = uniform;
+                lastUniformTop = y1;
+                continue;
+            }
+            LevelChunkSection section = sections[si];
+            for (int c = 0; c < 256; c++) {
+                int lx = c & 15, lz = c >> 4, x = x0 + lx, z = z0 + lz, i = idx[c];
+                int hi = Math.min(y1, Math.min(maxY, surf[c]));
+                for (int y = y0; y <= hi; y++) {
+                    int id = t.block(tile, i, x, y - offset, z);
                     if (id == Palette.AIR) continue;
-                    int si = chunk.getSectionIndex(y);
-                    if (si != sectionIndex) {
-                        sectionIndex = si;
-                        section = chunk.getSection(si);
-                    }
                     BlockState state = st[id];
                     section.setBlockState(lx, y & 15, lz, state, false);
                     oceanFloor.update(lx, y, lz, state);
@@ -140,6 +185,20 @@ public final class EarthChunkGenerator extends ChunkGenerator {
                 }
             }
         }
+        if (lastUniform != null) { // heightmaps only ever rise, so the highest uniform section is enough
+            for (int c = 0; c < 256; c++) {
+                oceanFloor.update(c & 15, lastUniformTop, c >> 4, lastUniform);
+                worldSurface.update(c & 15, lastUniformTop, c >> 4, lastUniform);
+            }
+        }
+    }
+
+    @Override
+    public void createStructures(RegistryAccess registryAccess, ChunkGeneratorStructureState structureState,
+                                 StructureManager structureManager, ChunkAccess chunk,
+                                 StructureTemplateManager templateManager) {
+        // structures belong to the surface world, not the deep layers under it
+        if (layer == 0) super.createStructures(registryAccess, structureState, structureManager, chunk, templateManager);
     }
 
     @Override
@@ -181,7 +240,13 @@ public final class EarthChunkGenerator extends ChunkGenerator {
     public int getBaseHeight(int x, int z, Heightmap.Types type, LevelHeightAccessor level, RandomState random) {
         Terrain t = terrain();
         boolean floor = type == Heightmap.Types.OCEAN_FLOOR_WG || type == Heightmap.Types.OCEAN_FLOOR;
-        return (floor ? t.top(x, z) : t.surface(x, z)) + 1;
+        int y = (floor ? t.top(x, z) : t.surface(x, z)) + 1 + offset;
+        return Math.max(level.getMinBuildHeight(), Math.min(level.getMaxBuildHeight(), y));
+    }
+
+    /** Virtual y (continuous through the deep layers) for a y in this layer. */
+    public int virtualY(double y) {
+        return (int) Math.floor(y) - offset;
     }
 
     @Override
@@ -192,12 +257,15 @@ public final class EarthChunkGenerator extends ChunkGenerator {
         BlockState[] column = new BlockState[level.getHeight()];
         Terrain.Tile tile = t.tileAt(x, z);
         int i = Terrain.index(x, z);
-        for (int k = 0; k < column.length; k++) column[k] = st[t.block(tile, i, x, minY + k, z)];
+        for (int k = 0; k < column.length; k++) column[k] = st[t.block(tile, i, x, minY + k - offset, z)];
         return new NoiseColumn(minY, column);
     }
 
     @Override
     public void addDebugScreenInfo(List<String> info, RandomState random, BlockPos pos) {
         info.add("ALOS Earth: " + terrain().describe(pos.getX(), pos.getZ()));
+        if (settings.deepLayers() > 0) {
+            info.add("ALOS Earth: " + EarthCommands.elevation(this, pos.getY()) + (layer > 0 ? " (deep layer " + layer + ")" : ""));
+        }
     }
 }

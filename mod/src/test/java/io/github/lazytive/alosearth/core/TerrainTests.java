@@ -41,6 +41,42 @@ final class TerrainTests {
             check(Math.abs(top - want) < 8, "true-scale peak at " + top + ", expected about " + want);
         });
 
+        run("1:1 option: real ocean depths through the deep layers, land fits", () -> {
+            EarthSettings s = EarthSettings.ONE_TO_ONE;
+            double everest = s.seaLevel() + s.landBlocks(8849);
+            check(everest > 1900 && everest < s.maxY() - 30, "everest at " + everest);
+            check(Math.abs(s.landBlocks(100) - 94) < 2, "hills near 1:1: " + s.landBlocks(100));
+            check(s.oceanBlocks(10994) == 10994, "sea 1:1");
+            check(s.seaLevel() - 10994 > s.bottomY() + 50, "Mariana Trench fits: bottom " + s.bottomY());
+            check(s.layerShift() == s.height() - EarthSettings.LAYER_OVERLAP, "shift");
+            for (EarthSettings e : new EarthSettings[] {s, EarthSettings.DEFAULT, EarthSettings.TRUE_SCALE}) {
+                for (double m : new double[] {-9000, -300, 0, 250, 3000, 8849}) {
+                    double back = e.metersAt(e.seaLevel() + (m < 0 ? -e.oceanBlocks(-m) : e.landBlocks(m)));
+                    check(Math.abs(back - m) < 1e-6 * Math.max(1, Math.abs(m)) + 1e-6, "metersAt(" + m + ") = " + back);
+                }
+            }
+            int[] b = new CubeProjection(s.metersPerBlock(), s.centerLat(), s.centerLon(), s.margin()).bounds();
+            for (int v : b) check(Math.abs(v) < 29_999_000, "map inside the world border: " + java.util.Arrays.toString(b));
+
+            Terrain t = new Terrain(s, sources(data));
+            double[] p = new double[2];
+            t.projection.forward(139.5, 35.5, p);
+            int top = t.top((int) Math.floor(p[0]), (int) Math.floor(p[1]));
+            double want = s.seaLevel() + s.landBlocks(3071);
+            check(Math.abs(top - want) < 40, "1:1 peak at " + top + ", expected about " + want);
+            // deep synthetic ocean: the floor sits at the real depth, below the main world
+            t.projection.forward(-12.857, -4, p);
+            int x = (int) Math.floor(p[0]), z = (int) Math.floor(p[1]);
+            double depth = -t.data.bathymetry.bilinear(-12.857, -4);
+            int floor = t.top(x, z);
+            check(depth > 2200, "synthetic depth " + depth);
+            check(Math.abs(floor - (s.seaLevel() - depth)) < 20 && floor < s.minY(), "sea floor " + floor + " for depth " + depth);
+            check(t.surface(x, z) == s.seaLevel() && t.block(x, floor + 1, z) == Palette.WATER
+                && t.block(x, floor - 50, z) == Palette.DEEPSLATE, "water column");
+            check(t.block(x, s.bottomY(), z) == Palette.BEDROCK && t.block(x, s.minY(), z) != Palette.BEDROCK,
+                "bedrock only at the bottom of the last layer");
+        });
+
         run("same input gives the same terrain", () -> {
             Terrain a = new Terrain(EarthSettings.DEFAULT, sources(data));
             Terrain b = new Terrain(EarthSettings.DEFAULT, sources(data));

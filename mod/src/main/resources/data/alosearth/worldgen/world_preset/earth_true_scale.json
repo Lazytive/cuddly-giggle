@@ -10,14 +10,16 @@
             "true_scale": true,
             "detail": 0.25,
             "min_y": -320,
-            "height": 704
+            "height": 704,
+            "sea_floor": true
           }
         },
         "settings": {
           "true_scale": true,
           "detail": 0.25,
           "min_y": -320,
-          "height": 704
+          "height": 704,
+          "sea_floor": true
         }
       }
     },

@@ -53,12 +53,17 @@ public final class AutoDem {
 
     /** Bilinear elevation in metres, NaN over open ocean or if the tile can't be had. Blocks while downloading. */
     public double bilinear(double lon, double lat) {
+        return sample(lon, lat, false);
+    }
+
+    /** Elevation; {@code smooth} uses bicubic interpolation (for fine scales). */
+    public double sample(double lon, double lat, boolean smooth) {
         lon = Rasters.normLon(lon);
         int la = (int) Math.floor(Math.max(-90, Math.min(89.999999, lat)));
         int lo = (int) Math.floor(Math.max(-180, Math.min(179.999999, lon)));
         Rasters.Raster r = tile(la, lo);
         if (r == null) return Double.NaN;
-        return r.bilinear(lon, lat, r.tiff.nodata);
+        return smooth ? r.cubic(lon, lat, r.tiff.nodata) : r.bilinear(lon, lat, r.tiff.nodata);
     }
 
     private Rasters.Raster tile(int la, int lo) {

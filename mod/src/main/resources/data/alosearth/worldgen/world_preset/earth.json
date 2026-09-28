@@ -5,7 +5,13 @@
       "generator": {
         "type": "alosearth:earth",
         "biome_source": {
-          "type": "alosearth:earth"
+          "type": "alosearth:earth",
+          "settings": {
+            "sea_floor": true
+          }
+        },
+        "settings": {
+          "sea_floor": true
         }
       }
     },
