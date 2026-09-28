@@ -1,7 +1,7 @@
 # ALOS Earth (Fabric mod, beta)
 
-A **world type** that generates the whole Earth at about **1 block ≈ 30 m**,
-on the fly, from JAXA's ALOS AW3D30 elevation data. The world is a **globe**:
+A **world type** that generates the whole Earth at about **1 block ≈ 30 m**
+(or **1:1**, see below), on the fly, from JAXA's ALOS AW3D30 elevation data. The world is a **globe**:
 walk or fly in any direction, across the poles or around the planet, and you
 arrive where you would on the real Earth.
 
@@ -25,14 +25,46 @@ arrive where you would on the real Earth.
 * **Where the mod goes:** drop `alos-earth-<version>.jar` into `mods/`.
 * **Servers:** the mod only has to be installed on the server; players
   can join with an unmodded client.
-* **Single player:** when creating the world, pick one of two world types:
+* **Single player:** when creating the world, pick one of three world types:
   * **ALOS Earth (Minecraft‑like):** the style described above.
   * **ALOS Earth (true 1:30):** the data's real proportions, 1 block = 30 m
     vertically as well. Hills are gentle, Everest peaks near y 358, and
     oceans reach down to y −304 (the world runs from y −320 to 384).
-* **Dedicated server:** set `level-type=alosearth\:earth` (Minecraft‑like)
-  or `level-type=alosearth\:earth_true_scale` in `server.properties` before
-  the world is first created.
+  * **ALOS Earth (1:1):** 1 block = 1 m, see [The 1:1 world](#the-11-world).
+* **Dedicated server:** set `level-type=alosearth\:earth` (Minecraft‑like),
+  `level-type=alosearth\:earth_true_scale` or `level-type=alosearth\:earth_1to1`
+  in `server.properties` before the world is first created.
+
+### The 1:1 world
+
+Everything is life size: a street is a few blocks wide, the Earth is
+40 million blocks around (the map fits inside Minecraft's 30‑million‑block
+world border).
+
+* **Oceans are at their real depth.** Minecraft worlds can be at most 4,064
+  blocks tall, so the sea carries on below the world's floor (y −2032)
+  in three stacked *deep layer* dimensions, down to the Mariana Trench
+  about 11 km below sea level. Sink (or dig) past about y −2000 and you move
+  into the layer below at the same x and z. Swim back up past y 2000 in a
+  deep layer and you return to the one above. Neighbouring layers share
+  96 blocks of identical water and rock, so the join isn't visible. The deep
+  is pitch dark, and structures don't generate there.
+* **Land is 1:1 near sea level** and eases off with height so the highest
+  peaks fit under the y 2031 build limit:
+
+  | real height | block height above sea |
+  |---|---|
+  | 100 m | 94 |
+  | 1,000 m | 638 |
+  | 3,776 m (Fuji) | 1,358 |
+  | 8,849 m (Everest) | 1,928 |
+
+  Mountains higher than about 1 km are therefore squashed. Stacking layers
+  upwards as well would let them be 1:1, but you would see the mountains cut
+  off at the join (underwater you can't see far enough to notice).
+* **Detail:** the data has one point every 30 m. The mod interpolates
+  smoothly between the points and adds small bumps on top.
+* `/earth whereami` and F3 show your real elevation or depth.
 
 ### Automatic updates (Prism Launcher)
 
@@ -65,8 +97,15 @@ in `alosearth-data/auto/`.
 
 * **First visit to an area:** there's a short pause while its tile
   downloads.
-* **Open ocean:** it has no tiles, and that is remembered so nothing is
+* **Open ocean:** it has no land tiles, and that is remembered so nothing is
   re‑fetched.
+* **Sea floor:** new worlds also download ocean depths (about 250 KB per
+  tile, 1 km detail) from the free
+  [terrain tiles on AWS](https://registry.opendata.aws/terrain-tiles/),
+  whose oceans come from ETOPO1 and GEBCO, into
+  `alosearth-data/auto/seafloor/`. Worlds made with an earlier beta keep
+  their shallow seas, so new chunks still match the ones already
+  generated.
 * **Offline:** unreachable areas become ocean; the mod tries again later.
 
 Install your own data to override it. The first launch writes
@@ -80,7 +119,8 @@ resolved against the game or server folder:
 | `alosearth-data/fill/` | any lon/lat GeoTIFF DEM tiles | optional: fills gaps |
 | `alosearth-data/climate/` | Köppen‑Geiger 1 km GeoTIFF (Beck et al.) | optional: a sharper climate map than the built‑in one |
 
-* **Order of use:** AW3D30 → fill → auto‑download → GEBCO → ocean.
+* **Order of use:** AW3D30 → fill → auto‑download → GEBCO (or the
+  downloaded sea floor) → ocean.
 * **Turning off downloads:** set `"auto_download": false` in the config.
 * **Checking what's loaded:** run `/earth status`.
 
@@ -151,6 +191,7 @@ Preview any area as a PNG without starting Minecraft:
 ```bash
 java -cp build/libs/alos-earth-*.jar io.github.lazytive.alosearth.core.Preview \
     --aw3d30 alosearth-data/aw3d30 --bbox 35.2,138.5,35.6,139.0 --step 2 -o fuji.png
+# --true-scale or --one-to-one for the other world types; --auto DIR to download data
 ```
 
 CI (`.github/workflows/mod.yml`) builds the mod, runs the core tests, then

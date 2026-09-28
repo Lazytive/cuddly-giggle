@@ -21,6 +21,7 @@ import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.NaturalSpawner;
 import net.minecraft.world.level.NoiseColumn;
 import net.minecraft.world.level.StructureManager;
+import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeManager;
 import net.minecraft.world.level.biome.BiomeSource;
@@ -191,6 +192,14 @@ public final class EarthChunkGenerator extends ChunkGenerator {
                 worldSurface.update(c & 15, lastUniformTop, c >> 4, lastUniform);
             }
         }
+    }
+
+    @Override
+    public void applyBiomeDecoration(WorldGenLevel level, ChunkAccess chunk, StructureManager structureManager) {
+        // Deep layers get no decoration: kelp and coral don't grow kilometres down, and vanilla's
+        // "freeze the top layer" would ice over the water at the top of the layer (Minecraft
+        // cools biomes with height), leaving an ice sheet in the middle of the ocean.
+        if (layer == 0) super.applyBiomeDecoration(level, chunk, structureManager);
     }
 
     @Override

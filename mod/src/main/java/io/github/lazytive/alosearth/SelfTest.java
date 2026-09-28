@@ -140,7 +140,9 @@ final class SelfTest {
         }
         notes.add("deep layer 1 heightmaps: " + hm);
         int top = deep1.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR, x, z) - 1;
-        if (top < local || top > local + 30) errors.add("deep layer heightmap " + top + ", expected about " + local);
+        if (top != local) errors.add("deep layer heightmap " + top + ", expected " + local);
+        var capital = deep1.getBlockState(new BlockPos(x, deep1.getMaxBuildHeight() - 1, z));
+        if (!capital.is(net.minecraft.world.level.block.Blocks.WATER)) errors.add("top of deep layer 1 is " + capital + ", not water");
 
         // a pig sinking past the main world's floor moves to layer 1 at the same place, and back up
         if (LayerHandler.direction(level, gen, level.getMinBuildHeight() + 40) != 0
