@@ -40,6 +40,20 @@ public final class LayerHandler {
         return null;
     }
 
+    /** +1 if something at this y should move down a layer, -1 if up, else 0. */
+    static int direction(ServerLevel level, EarthChunkGenerator gen, double y) {
+        if (gen.layer < gen.settings.deepLayers() && y < level.getMinBuildHeight() + EDGE) return 1;
+        if (gen.layer > 0 && y > level.getMaxBuildHeight() - EDGE) return -1;
+        return 0;
+    }
+
+    /** Moves an entity to the layer above or below; returns it (in its new level), or null. */
+    static Entity cross(ServerLevel level, EarthChunkGenerator gen, Entity e, int dir) {
+        ServerLevel dest = level(level.getServer(), gen, gen.layer + dir);
+        if (dest == null) return null;
+        return move(e, dest, e.getY() + dir * gen.settings.layerShift());
+    }
+
     public static void tick(ServerLevel level, EarthChunkGenerator gen) {
         if (gen.settings.deepLayers() == 0) return;
         int floor = level.getMinBuildHeight() + EDGE, ceiling = level.getMaxBuildHeight() - EDGE;
@@ -47,16 +61,10 @@ public final class LayerHandler {
         List<Entity> movers = new ArrayList<>();
         for (Entity e : level.getAllEntities()) {
             if (e.isPassenger() || e.isRemoved()) continue;
-            if ((down && e.getY() < floor) || (up && e.getY() > ceiling)) movers.add(e);
+            if (direction(level, gen, e.getY()) != 0) movers.add(e);
         }
         MinecraftServer server = level.getServer();
-        for (Entity e : movers) {
-            boolean goDown = e.getY() < floor;
-            ServerLevel dest = level(server, gen, gen.layer + (goDown ? 1 : -1));
-            if (dest == null) continue;
-            double y = e.getY() + (goDown ? 1 : -1) * gen.settings.layerShift();
-            move(e, dest, y);
-        }
+        for (Entity e : movers) cross(level, gen, e, direction(level, gen, e.getY()));
         if (level.getGameTime() % 20 == 0) {
             for (ServerPlayer p : level.players()) {
                 int k = p.getY() < floor + PRELOAD && down ? 1 : p.getY() > ceiling - PRELOAD && up ? -1 : 0;
@@ -69,12 +77,12 @@ public final class LayerHandler {
         }
     }
 
-    static void move(Entity e, ServerLevel dest, double y) {
+    static Entity move(Entity e, ServerLevel dest, double y) {
         Vec3 v = e.getDeltaMovement();
         float fall = e.fallDistance;
         Entity moved = e.changeDimension(new DimensionTransition(dest, new Vec3(e.getX(), y, e.getZ()), v,
             e.getYRot(), e.getXRot(), DimensionTransition.DO_NOTHING));
-        if (moved == null) return;
+        if (moved == null) return null;
         moved.fallDistance = fall;
         moved.setDeltaMovement(v);
         moved.hurtMarked = true;
@@ -87,5 +95,6 @@ public final class LayerHandler {
                 }
             }
         }
+        return moved;
     }
 }

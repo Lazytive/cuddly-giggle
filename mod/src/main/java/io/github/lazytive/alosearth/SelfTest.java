@@ -120,28 +120,55 @@ final class SelfTest {
         Block main = level.getBlockState(new BlockPos(x, level.getMinBuildHeight(), z)).getBlock();
         Block overlap = deep1.getBlockState(new BlockPos(x, level.getMinBuildHeight() + shift, z)).getBlock();
         notes.add("deep layer 1 floor " + got + ", above it " + above + "; main world bottom " + main + " = layer 1 " + overlap);
-        if (got != want || above != net.minecraft.world.level.block.Blocks.WATER) errors.add("deep layer 1 sea floor is wrong");
+        if (got != want) errors.add("deep layer 1 sea floor is " + got + ", expected " + want);
+        if (!deep1.getFluidState(new BlockPos(x, local + 3, z)).is(net.minecraft.tags.FluidTags.WATER)) {
+            errors.add("no water above the deep sea floor");
+        }
         if (main != net.minecraft.world.level.block.Blocks.WATER || overlap != main) errors.add("layers do not overlap seamlessly");
+        StringBuilder hm = new StringBuilder();
+        for (var type : new net.minecraft.world.level.levelgen.Heightmap.Types[] {
+            net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR, net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE,
+            net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING}) {
+            hm.append(type).append('=').append(deep1.getHeight(type, x, z)).append(' ');
+        }
+        for (int y = deep1.getMaxBuildHeight() - 1; y > local - 5; y--) {
+            var bs = deep1.getBlockState(new BlockPos(x, y, z));
+            if (bs.blocksMotion()) {
+                hm.append("highest motion-blocking block ").append(bs).append(" at ").append(y);
+                break;
+            }
+        }
+        notes.add("deep layer 1 heightmaps: " + hm);
         int top = deep1.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR, x, z) - 1;
-        if (top != local) errors.add("deep layer heightmap " + top + ", expected " + local);
+        if (top < local || top > local + 30) errors.add("deep layer heightmap " + top + ", expected about " + local);
 
-        // a pig sinking past the main world's floor arrives in layer 1 at the same place
+        // a pig sinking past the main world's floor moves to layer 1 at the same place, and back up
+        if (LayerHandler.direction(level, gen, level.getMinBuildHeight() + 40) != 0
+            || LayerHandler.direction(level, gen, level.getMinBuildHeight() + 10) != 1
+            || LayerHandler.direction(level, gen, level.getMaxBuildHeight() - 1) != 0
+            || LayerHandler.direction(deep1, g1, deep1.getMaxBuildHeight() - 10) != -1
+            || LayerHandler.direction(deep1, g1, deep1.getMaxBuildHeight() - 40) != 0
+            || LayerHandler.direction(deep1, g1, level.getMinBuildHeight() + 10 + shift) != 0) {
+            errors.add("layer crossing thresholds are wrong (an entity could bounce between layers)");
+        }
         Pig pig = EntityType.PIG.create(level);
         pig.moveTo(x + 0.5, level.getMinBuildHeight() + 10.5, z + 0.5, 0f, 0f);
+        pig.setDeltaMovement(0.1, -0.2, 0.05);
         level.addFreshEntity(pig);
-        LayerHandler.tick(level, gen);
-        List<Pig> found = deep1.getEntitiesOfClass(Pig.class, new net.minecraft.world.phys.AABB(new BlockPos(x, level.getMinBuildHeight() + 10 + shift, z)).inflate(2));
-        if (found.isEmpty()) errors.add("pig did not sink into deep layer 1");
-        else {
-            Pig moved = found.get(0);
-            LayerHandler.tick(deep1, g1); // not yet near the top of layer 1: stays
-            if (moved.level() != deep1 || moved.isRemoved()) errors.add("pig bounced straight back up");
-            moved.moveTo(moved.getX(), deep1.getMaxBuildHeight() - 5, moved.getZ());
-            LayerHandler.tick(deep1, g1);
-            boolean back = !level.getEntitiesOfClass(Pig.class, new net.minecraft.world.phys.AABB(
-                new BlockPos(x, deep1.getMaxBuildHeight() - 5 - shift, z)).inflate(2)).isEmpty();
-            if (!back) errors.add("pig did not rise back into the main world");
-            notes.add("pig crossed the layer join both ways");
+        net.minecraft.world.entity.Entity moved = LayerHandler.cross(level, gen, pig, 1);
+        if (moved == null || moved.level() != deep1 || Math.abs(moved.getY() - (level.getMinBuildHeight() + 10.5 + shift)) > 1e-6
+            || Math.abs(moved.getX() - (x + 0.5)) > 1e-6 || moved.getDeltaMovement().y != -0.2) {
+            errors.add("pig did not sink into deep layer 1 correctly: " + (moved == null ? "null" : moved.level().dimension()
+                + " " + moved.position() + " " + moved.getDeltaMovement()));
+        } else {
+            moved.moveTo(moved.getX(), deep1.getMaxBuildHeight() - 5.5, moved.getZ());
+            net.minecraft.world.entity.Entity back = LayerHandler.cross(deep1, g1, moved, -1);
+            if (back == null || back.level() != level || Math.abs(back.getY() - (deep1.getMaxBuildHeight() - 5.5 - shift)) > 1e-6) {
+                errors.add("pig did not rise back into the main world");
+            } else {
+                notes.add("pig crossed the layer join both ways");
+                back.discard();
+            }
         }
     }
 

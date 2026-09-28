@@ -576,6 +576,12 @@ public final class Terrain {
             return;
         }
 
+        double snowM = interp(alat, SNOW_LAT, SNOW_M);
+        double snowH = settings.landBlocks(snowM);
+        double treeH = settings.landBlocks(Math.max(0, snowM - 900));
+        // at 1:1 a climate-map pixel (~3 km) of mountain-top tundra would spill far down the slopes
+        if (settings.fine() && (zone == Zone.TUNDRA || zone == Zone.ICE) && alat < 55 && h < treeH) zone = Zone.BOREAL;
+
         // base biome from the climate zone, varied in patches
         String biome = pickBiome(zone, x, y, z);
         int style = switch (biome) {
@@ -607,9 +613,6 @@ public final class Terrain {
         // mountains: snow above the snow line; bare scree and rock between the
         // tree line and the snow line; below that, steep ground is rock
         // (banded terracotta cliffs in dry climates)
-        double snowM = interp(alat, SNOW_LAT, SNOW_M);
-        double snowH = settings.landBlocks(snowM);
-        double treeH = settings.landBlocks(Math.max(0, snowM - 900));
         boolean dry = zone == Zone.DESERT || zone == Zone.STEPPE;
         if (zone != Zone.ICE && h >= snowH) {
             if (slope >= 4) biome = h >= snowH + 60 ? "jagged_peaks" : "frozen_peaks";
