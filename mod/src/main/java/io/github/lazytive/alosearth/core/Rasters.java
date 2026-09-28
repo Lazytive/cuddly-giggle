@@ -186,6 +186,35 @@ public final class Rasters {
             return 0;
         }
 
+        /**
+         * Land, sea or water for a DEM without a water mask (Copernicus style: the open sea is exactly
+         * 0 m, lakes and wide rivers are flattened to one exact value). The nearest pixel decides:
+         * exactly 0 is sea; a 3x3 block of one exact value is flattened water, whose level goes in
+         * {@code level[0]}; anything else is land, even below sea level (the Netherlands' polders,
+         * Death Valley). Uneven ground deeper than 200 m below sea level only occurs as sea floor
+         * (a fill DEM with bathymetry), so it counts as sea.
+         */
+        public int demClass(double lon, double lat, double[] level) {
+            int h = tiff.height, w = tiff.width;
+            int r = (int) clamp(Math.rint(row(lat)), 0, h - 1), c = (int) clamp(Math.rint(col(lon)), 0, w - 1);
+            double v = pixel(r, c);
+            if (v == tiff.nodata || Double.isNaN(v)) return CLS_UNKNOWN;
+            level[0] = v;
+            if (v == 0) return CLS_SEA;
+            boolean flat = true;
+            for (int dr = -1; dr <= 1 && flat; dr++) {
+                for (int dc = -1; dc <= 1; dc++) {
+                    int rr = Math.max(0, Math.min(h - 1, r + dr)), cc = Math.max(0, Math.min(w - 1, c + dc));
+                    if (pixel(rr, cc) != v) {
+                        flat = false;
+                        break;
+                    }
+                }
+            }
+            if (flat) return CLS_LAKE;
+            return v <= -200 ? CLS_SEA : CLS_LAND;
+        }
+
         /** Bilinear with nearest-neighbour fallback next to nodata (NaN if that is nodata too). */
         public double bilinear(double lon, double lat, double nodata) {
             int h = tiff.height, w = tiff.width;
@@ -400,6 +429,15 @@ public final class Rasters {
                 if (r.covers(lon, lat)) return r.nearest(lon, lat);
             }
             return Double.NaN;
+        }
+
+        /** {@link Raster#demClass} of the file covering a point ({@link #CLS_UNKNOWN} if none). */
+        public int demClass(double lon, double lat, double[] level) {
+            lon = normLon(lon);
+            for (Raster r : candidates(lon, lat)) {
+                if (r.covers(lon, lat)) return r.demClass(lon, lat, level);
+            }
+            return CLS_UNKNOWN;
         }
     }
 }

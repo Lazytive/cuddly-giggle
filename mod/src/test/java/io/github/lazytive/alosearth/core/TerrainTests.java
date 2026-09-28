@@ -199,6 +199,32 @@ final class TerrainTests {
             });
         }
 
+        if ("1".equals(System.getenv("ALOSEARTH_NET"))) {
+            run("land below sea level stays dry, flat water is a lake", () -> {
+                Path dir = java.nio.file.Files.createTempDirectory("alosearth-low");
+                AutoDem auto = new AutoDem(dir, new Rasters.SegmentCache(128L << 20));
+                double[] lvl = new double[1];
+                check(auto.demClass(4.65, 52.30, lvl) == Rasters.CLS_LAND && lvl[0] < -3, "Dutch polder: " + lvl[0]);
+                check(auto.demClass(-116.85, 36.25, lvl) == Rasters.CLS_LAND, "Death Valley");
+                check(auto.demClass(35.50, 31.50, lvl) == Rasters.CLS_LAKE && Math.abs(lvl[0] + 427) < 2, "Dead Sea: " + lvl[0]);
+                check(auto.demClass(4.20, 52.50, lvl) == Rasters.CLS_SEA, "North Sea");
+                DataSources ds = new DataSources(List.of(), List.of(), List.of(), List.of(), dir, 256L << 20);
+                EarthSettings s = EarthSettings.ONE_TO_FIVE;
+                Terrain t = new Terrain(s, ds);
+                double[] p = new double[2];
+                t.projection.forward(4.65, 52.30, p);
+                int x = (int) Math.floor(p[0]), z = (int) Math.floor(p[1]);
+                check(t.top(x, z) < s.seaLevel() && t.surface(x, z) == t.top(x, z), "polder should be dry land below sea level: top "
+                    + t.top(x, z) + " surface " + t.surface(x, z) + " " + t.biome(x, z));
+                t.projection.forward(35.50, 31.50, p);
+                x = (int) Math.floor(p[0]);
+                z = (int) Math.floor(p[1]);
+                int want = s.seaLevel() + (int) Math.round(-427 / 5.0);
+                check(Math.abs(t.surface(x, z) - want) <= 1 && t.top(x, z) < t.surface(x, z), "Dead Sea water at " + t.surface(x, z)
+                    + " (want " + want + "), bed " + t.top(x, z));
+            });
+        }
+
         run("tile speed", () -> {
             Terrain t = new Terrain(EarthSettings.DEFAULT, sources(data));
             double[] p = new double[2];

@@ -66,6 +66,15 @@ public final class AutoDem {
         return smooth ? r.cubic(lon, lat, r.tiff.nodata) : r.bilinear(lon, lat, r.tiff.nodata);
     }
 
+    /** {@link Rasters.Raster#demClass} of the downloaded tile (sea where there is no tile). */
+    public int demClass(double lon, double lat, double[] level) {
+        lon = Rasters.normLon(lon);
+        int la = (int) Math.floor(Math.max(-90, Math.min(89.999999, lat)));
+        int lo = (int) Math.floor(Math.max(-180, Math.min(179.999999, lon)));
+        Rasters.Raster r = tile(la, lo);
+        return r == null ? Rasters.CLS_SEA : r.demClass(lon, lat, level);
+    }
+
     private Rasters.Raster tile(int la, int lo) {
         int key = Rasters.Aw3d30.key(la, lo);
         Long failed = failedAt.get(key);

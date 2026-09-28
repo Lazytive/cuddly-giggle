@@ -310,7 +310,7 @@ public final class Terrain {
         byte[] cls = new byte[nn];
         boolean[] valid = new boolean[nn];
         Zone[] zone = new Zone[nn];
-        double[] ll = new double[2], smp = new double[2];
+        double[] ll = new double[2], smp = new double[2], flatLevel = new double[1];
 
         for (int i = 0; i < nn; i++) {
             int x = x0 + i % n, z = z0 + i / n;
@@ -342,7 +342,11 @@ public final class Terrain {
             if (Double.isNaN(e) && !data.fillDem.isEmpty()) {
                 try {
                     e = data.fillDem.sample(lon, la, fine);
-                    c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
+                    if (!Double.isNaN(e)) {
+                        c = data.fillDem.demClass(lon, la, flatLevel);
+                        if (c == Rasters.CLS_LAKE) e = flatLevel[0];
+                        else if (c == Rasters.CLS_UNKNOWN) c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
+                    }
                 } catch (RuntimeException ex) {
                     dataError(ex);
                 }
@@ -350,18 +354,24 @@ public final class Terrain {
             if (Double.isNaN(e) && data.autoDem != null) {
                 try {
                     e = data.autoDem.sample(lon, la, fine);
-                    c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
+                    if (!Double.isNaN(e)) {
+                        c = data.autoDem.demClass(lon, la, flatLevel);
+                        if (c == Rasters.CLS_LAKE) e = flatLevel[0];
+                        else if (c == Rasters.CLS_UNKNOWN) c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
+                    }
                 } catch (RuntimeException ex) {
                     dataError(ex);
                 }
             }
-            if ((Double.isNaN(e) || c == Rasters.CLS_SEA) && !data.bathymetry.isEmpty()) {
+            // depth data for the sea, and (in worlds with the downloaded sea floor) for lake beds
+            boolean wantDepth = Double.isNaN(e) || c == Rasters.CLS_SEA || (c == Rasters.CLS_LAKE && s.seaFloor());
+            if (wantDepth && !data.bathymetry.isEmpty()) {
                 try {
                     b = data.bathymetry.sample(lon, la, fine);
                 } catch (RuntimeException ex) {
                     dataError(ex);
                 }
-            } else if ((Double.isNaN(e) || c == Rasters.CLS_SEA) && s.seaFloor() && data.seaFloor != null) {
+            } else if (wantDepth && s.seaFloor() && data.seaFloor != null) {
                 try {
                     b = data.seaFloor.sample(lon, la, fine);
                 } catch (RuntimeException ex) {
@@ -374,6 +384,7 @@ public final class Terrain {
             }
             if (Double.isNaN(e)) c = Rasters.CLS_SEA;
             if (c == Rasters.CLS_SEA && !Double.isNaN(b)) depth[i] = Math.max(0, -b);
+            if (c == Rasters.CLS_LAKE && !Double.isNaN(b) && b < e - 3) depth[i] = b; // lake bed elevation
             elev[i] = e;
             cls[i] = (byte) c;
 
@@ -430,6 +441,7 @@ public final class Terrain {
             } else if (isLake[i]) {
                 water[i] = sea + (int) Math.round(base[i]);
                 top[i] = water[i] - 3;
+                if (!Double.isNaN(depth[i])) top[i] = Math.min(top[i], sea + (int) Math.round(s.landBlocks(depth[i])));
             } else {
                 top[i] = sea + (int) Math.round(h[i]);
             }
