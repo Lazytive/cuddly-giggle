@@ -58,8 +58,9 @@ character on top of the real shape. It's in every world type:
   * Ocean monuments, which vanilla always builds at y 39, are only placed
     where the sea floor is just below that, instead of hanging in deep
     water.
-  * Ocean ruins and shipwrecks need deep water all around, so they aren't
-    left on beaches or in shallow rivers (beached shipwrecks excepted).
+  * Shipwrecks need at least 12 blocks of water (8 all around) and ocean
+    ruins at least 6 (4 around), so they sit fully under water instead of on
+    beaches or in shallows. Beached shipwrecks still wash up on beaches.
   * Around buildings the ground is filled in or cut away, as vanilla does,
     so houses don't float above the ground or sit buried in a slope.
 

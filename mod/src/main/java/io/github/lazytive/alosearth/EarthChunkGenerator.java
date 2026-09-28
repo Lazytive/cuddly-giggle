@@ -287,10 +287,13 @@ public final class EarthChunkGenerator extends ChunkGenerator {
             int floor = t.top(c.getX(), c.getZ());
             return floor >= 22 && floor <= 38 && t.surface(c.getX(), c.getZ()) > floor + 20;
         }
-        if (path.startsWith("ocean_ruin") || path.equals("shipwreck")) { // under water all round, not on the beach
+        if (path.startsWith("ocean_ruin") || path.equals("shipwreck")) {
+            // fully under water: a wreck's hull is ~10 blocks tall, ruins up to ~6
+            boolean wreck = path.equals("shipwreck");
+            int centre = wreck ? 12 : 6, around = wreck ? 8 : 4;
             for (int[] d : new int[][] {{0, 0}, {16, 0}, {-16, 0}, {0, 16}, {0, -16}, {11, 11}, {-11, 11}, {11, -11}, {-11, -11}}) {
                 int x = c.getX() + d[0], z = c.getZ() + d[1];
-                if (t.surface(x, z) - t.top(x, z) < 3) return false;
+                if (t.surface(x, z) - t.top(x, z) < (d[0] == 0 && d[1] == 0 ? centre : around)) return false;
             }
             return true;
         }
