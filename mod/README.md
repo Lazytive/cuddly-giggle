@@ -81,40 +81,6 @@ world border).
   smoothly between the points and adds small bumps on top.
 * `/earth whereami` and F3 show your real elevation or depth.
 
-### Buildings (hidden)
-
-Earlier betas had a **1:1 + buildings** world type. It is no longer in the
-menu because the OSM Buildings service refuses most players' requests, but
-worlds made with it still load. For a new one on a server, use
-`level-type=alosearth\:earth_1to1_buildings`. The world type adds the world's buildings from
-[OpenStreetMap](https://www.openstreetmap.org), fetched from the
-[OSM Buildings](https://osmbuildings.org) tile service when an area first
-generates, and cached in `alosearth-data/auto/buildings/`.
-
-* **What you get:** each building is placed at its real footprint and
-  height, standing on the ground at its middle. Buildings are simple:
-  * walls in the building's recorded colour or material (brick, glass,
-    stone, wood, concrete), with windows;
-  * a floor every 4 blocks, open inside;
-  * a flat roof;
-  * courtyards left open.
-* **What you don't get:** roads, interiors, roof shapes and doors.
-* **Where you start:** a new world of this type starts in Tokyo
-  (`"start_place"` in `config/alosearth.json` picks another `/earth goto`
-  place). The map's centre is central African rainforest, which has almost
-  no buildings.
-* **Checking:** `/earth whereami` says how many buildings are mapped near
-  you, and `/earth status` shows whether this world has buildings and whether
-  their downloads are working.
-* **Coverage:** it depends on OpenStreetMap. Cities are well mapped, and
-  heights are guessed from the number of floors (or about 8 m) where none is
-  recorded.
-* **Changing the source:** set `buildings_url` in `config/alosearth.json`
-  to another tile URL (`{x}`/`{y}` at zoom 15), or to a folder of
-  `{x}/{y}.json` GeoJSON tiles.
-
-Building data © OpenStreetMap contributors (ODbL), served by OSM Buildings.
-
 ### Automatic updates (Prism Launcher)
 
 Every build that passes CI is published as the

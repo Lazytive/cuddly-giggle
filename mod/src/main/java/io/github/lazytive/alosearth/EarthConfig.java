@@ -25,10 +25,6 @@ public final class EarthConfig {
     /** Download Copernicus 30 m elevation for areas with no installed tiles. */
     public boolean auto_download = true;
     public String auto_download_dir = "alosearth-data/auto";
-    /** OSM Buildings tile URL ({x}/{y} at zoom 15) for the "1:1 + buildings" world type, or a local folder. */
-    public String buildings_url = io.github.lazytive.alosearth.core.Buildings.DEFAULT_URL;
-    /** Where a new "1:1 + buildings" world starts (a name from /earth goto), or "" for the map centre. */
-    public String start_place = "tokyo";
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
@@ -72,14 +68,6 @@ public final class EarthConfig {
         return new DataSources(paths(game, aw3d30), paths(game, fill_dem), paths(game, bathymetry), paths(game, climate),
             auto_download ? game.resolve(auto_download_dir == null ? "alosearth-data/auto" : auto_download_dir) : null,
             (long) Math.max(64, cache_mb) << 20);
-    }
-
-    io.github.lazytive.alosearth.core.Buildings openBuildings() {
-        Path game = FabricLoader.getInstance().getGameDir();
-        Path auto = game.resolve(auto_download_dir == null ? "alosearth-data/auto" : auto_download_dir);
-        String url = buildings_url;
-        if (url != null && !url.contains("{x}") && !url.isBlank()) url = game.resolve(url).toString();
-        return new io.github.lazytive.alosearth.core.Buildings(auto.resolve("buildings"), url);
     }
 
     private static List<Path> paths(Path base, List<String> in) {

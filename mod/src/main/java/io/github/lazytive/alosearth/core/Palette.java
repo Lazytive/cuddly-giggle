@@ -13,20 +13,11 @@ public final class Palette {
         "terracotta", "orange_terracotta", "yellow_terracotta", "white_terracotta", "red_terracotta",
         "brown_terracotta", "light_gray_terracotta", "gravel", "snow_block", "packed_ice", "water",
         "coarse_dirt", "podzol", "clay", "mud",
-        // buildings
-        "white_concrete", "light_gray_concrete", "gray_concrete", "black_concrete", "bricks", "stone_bricks",
-        "smooth_stone", "glass", "light_blue_stained_glass", "quartz_block", "smooth_sandstone", "spruce_planks",
-        "polished_andesite", "deepslate_tiles", "brown_concrete", "cyan_terracotta", "blue_concrete",
-        "green_terracotta", "yellow_concrete", "polished_granite",
     };
     public static final int AIR = 0, BEDROCK = 1, DEEPSLATE = 2, STONE = 3, DIRT = 4, GRASS = 5, SAND = 6,
         SANDSTONE = 7, RED_SAND = 8, TERRACOTTA = 9, ORANGE_TC = 10, YELLOW_TC = 11, WHITE_TC = 12, RED_TC = 13,
         BROWN_TC = 14, LIGHT_GRAY_TC = 15, GRAVEL = 16, SNOW_BLOCK = 17, PACKED_ICE = 18, WATER = 19,
-        COARSE_DIRT = 20, PODZOL = 21, CLAY = 22, MUD = 23,
-        WHITE_CONCRETE = 24, LIGHT_GRAY_CONCRETE = 25, GRAY_CONCRETE = 26, BLACK_CONCRETE = 27, BRICKS = 28,
-        STONE_BRICKS = 29, SMOOTH_STONE = 30, GLASS = 31, BLUE_GLASS = 32, QUARTZ = 33, SMOOTH_SANDSTONE = 34,
-        SPRUCE_PLANKS = 35, POLISHED_ANDESITE = 36, DEEPSLATE_TILES = 37, BROWN_CONCRETE = 38, CYAN_TC = 39,
-        BLUE_CONCRETE = 40, GREEN_TC = 41, YELLOW_CONCRETE = 42, POLISHED_GRANITE = 43;
+        COARSE_DIRT = 20, PODZOL = 21, CLAY = 22, MUD = 23;
 
     /** Badlands terracotta bands, repeating with height. */
     static final int[] BANDS = {

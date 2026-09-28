@@ -3,7 +3,6 @@ package io.github.lazytive.alosearth;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import io.github.lazytive.alosearth.core.Buildings;
 import io.github.lazytive.alosearth.core.EarthSettings;
 import io.github.lazytive.alosearth.core.Palette;
 import io.github.lazytive.alosearth.core.Terrain;
@@ -71,8 +70,7 @@ public final class EarthChunkGenerator extends ChunkGenerator {
     public static final MapCodec<EarthChunkGenerator> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
         BiomeSource.CODEC.fieldOf("biome_source").forGetter(ChunkGenerator::getBiomeSource),
         SETTINGS_CODEC.optionalFieldOf("settings", D).forGetter(g -> g.settings),
-        Codec.intRange(0, 8).optionalFieldOf("layer", 0).forGetter(g -> g.layer),
-        Codec.BOOL.optionalFieldOf("buildings", false).forGetter(g -> g.buildings)
+        Codec.intRange(0, 8).optionalFieldOf("layer", 0).forGetter(g -> g.layer)
     ).apply(i, i.stable(EarthChunkGenerator::new)));
 
     public final EarthSettings settings;
@@ -82,14 +80,10 @@ public final class EarthChunkGenerator extends ChunkGenerator {
     public final int offset;
     private volatile BlockState[] states;
 
-    /** Place OpenStreetMap buildings (1:1 worlds). */
-    public final boolean buildings;
-
-    public EarthChunkGenerator(BiomeSource biomeSource, EarthSettings settings, int layer, boolean buildings) {
+    public EarthChunkGenerator(BiomeSource biomeSource, EarthSettings settings, int layer) {
         super(biomeSource);
         this.settings = settings;
         this.layer = layer;
-        this.buildings = buildings && layer == 0;
         this.offset = layer * settings.layerShift();
     }
 
@@ -196,37 +190,6 @@ public final class EarthChunkGenerator extends ChunkGenerator {
             for (int c = 0; c < 256; c++) {
                 oceanFloor.update(c & 15, lastUniformTop, c >> 4, lastUniform);
                 worldSurface.update(c & 15, lastUniformTop, c >> 4, lastUniform);
-            }
-        }
-        if (buildings) placeBuildings(chunk, t, tile, idx, oceanFloor, worldSurface);
-    }
-
-    private void placeBuildings(ChunkAccess chunk, Terrain t, Terrain.Tile tile, int[] idx,
-                                Heightmap oceanFloor, Heightmap worldSurface) {
-        int x0 = chunk.getPos().getMinBlockX(), z0 = chunk.getPos().getMinBlockZ();
-        Buildings.Plan plan;
-        try {
-            plan = AlosEarth.buildings().plan(t, x0, z0);
-        } catch (RuntimeException e) {
-            AlosEarth.LOG.warn("Buildings for chunk {} skipped: {}", chunk.getPos(), e.toString());
-            return;
-        }
-        if (plan.isEmpty()) return;
-        BlockState[] st = states();
-        int maxY = chunk.getMaxBuildHeight() - 1;
-        for (int c = 0; c < 256; c++) {
-            int k = plan.building[c];
-            if (k < 0) continue;
-            Buildings.Placed p = plan.placed.get(k);
-            int lx = c & 15, lz = c >> 4, x = x0 + lx, z = z0 + lz;
-            int ground = tile.top[idx[c]];
-            for (int y = Math.min(p.base(), ground + 1); y <= Math.min(maxY, Math.max(p.top(), ground)); y++) {
-                int id = plan.block(c, x, y, z, ground);
-                if (id < 0) continue;
-                BlockState state = st[id];
-                chunk.getSection(chunk.getSectionIndex(y)).setBlockState(lx, y & 15, lz, state, false);
-                oceanFloor.update(lx, y, lz, state);
-                worldSurface.update(lx, y, lz, state);
             }
         }
     }

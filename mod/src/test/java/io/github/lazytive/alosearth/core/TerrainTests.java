@@ -17,14 +17,6 @@ final class TerrainTests {
             List.of(d.resolve("climate")), 256L << 20);
     }
 
-    /** A GeoJSON ring (closed) of the box lon0+w..lon0+e, lat0+s..lat0+n. */
-    static String square(double lon0, double lat0, double w, double e, double s, double n) {
-        double[][] pts = {{w, s}, {e, s}, {e, n}, {w, n}, {w, s}};
-        StringBuilder b = new StringBuilder("[");
-        for (double[] q : pts) b.append(b.length() > 1 ? "," : "").append("[").append(lon0 + q[0]).append(",").append(lat0 + q[1]).append("]");
-        return b.append("]").toString();
-    }
-
     static void register(Path data) {
         run("height curve fits the world", () -> {
             EarthSettings s = EarthSettings.DEFAULT;
@@ -103,55 +95,6 @@ final class TerrainTests {
                 && t.block(x, floor - 50, z) == Palette.DEEPSLATE, "water column");
             check(t.block(x, s.bottomY(), z) == Palette.BEDROCK && t.block(x, s.minY(), z) != Palette.BEDROCK,
                 "bedrock only at the bottom of the last layer");
-        });
-
-        run("OSM buildings stand on the 1:1 terrain", () -> {
-            EarthSettings s = EarthSettings.ONE_TO_ONE;
-            Terrain t = new Terrain(s, sources(data));
-            double lon0 = 139.30, lat0 = 35.40;
-            double mLat = 1 / 111320.0, mLon = 1 / (111320.0 * Math.cos(Math.toRadians(lat0)));
-            String ring = square(lon0, lat0, -20 * mLon, 20 * mLon, -15 * mLat, 15 * mLat);
-            String hole = square(lon0, lat0, 8 * mLon, 16 * mLon, -4 * mLat, 4 * mLat);
-            String json = "{\"type\":\"FeatureCollection\",\"features\":[{\"id\":\"w1\",\"type\":\"Feature\","
-                + "\"properties\":{\"height\":21,\"color\":\"#b0463a\",\"roofColor\":\"#444\",\"name\":\"Caf\\u00e9 \\\"A\\\"\"},"
-                + "\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[" + ring + "," + hole + "]}}]}";
-            java.util.List<Buildings.Building> parsed = Buildings.parse(json);
-            check(parsed.size() == 1 && parsed.get(0).height() == 21, "parsed " + parsed);
-            check(parsed.get(0).wall() == Palette.BRICKS || parsed.get(0).wall() == Palette.RED_TC, "wall colour " + parsed.get(0).wall());
-            int n = 1 << Buildings.ZOOM;
-            Path dir = java.nio.file.Files.createTempDirectory("alosearth-bld");
-            Path tile = dir.resolve(Buildings.tileX(lon0, n) + "/" + Buildings.tileY(lat0, n) + ".json");
-            java.nio.file.Files.createDirectories(tile.getParent());
-            java.nio.file.Files.writeString(tile, json);
-            Buildings b = new Buildings(dir.resolve("cache"), dir.toString());
-            double[] p = new double[2];
-            t.projection.forward(lon0 - 10 * mLon, lat0, p);
-            int x = (int) Math.floor(p[0]), z = (int) Math.floor(p[1]);
-            Buildings.Plan plan = b.plan(t, Math.floorDiv(x, 16) * 16, Math.floorDiv(z, 16) * 16);
-            int c = Math.floorMod(z, 16) * 16 + Math.floorMod(x, 16);
-            check(plan.building[c] >= 0 && !plan.wall[c], "inside column: " + plan.building[c] + " wall " + plan.wall[c]);
-            Buildings.Placed pl = plan.placed.get(plan.building[c]);
-            check(pl.top() - pl.base() == 21, "height " + (pl.top() - pl.base()));
-            int ground = t.top(x, z);
-            check(plan.block(c, x, pl.base() + 1, z, ground) == Palette.AIR
-                && plan.block(c, x, pl.base() + 4, z, ground) == Palette.SMOOTH_STONE
-                && plan.block(c, x, pl.top(), z, ground) == parsed.get(0).roof()
-                && plan.block(c, x, pl.top() + 1, z, ground) == -1, "interior blocks");
-            t.projection.forward(lon0 - 20 * mLon, lat0, p); // the west wall
-            Buildings.Plan edge = b.plan(t, Math.floorDiv((int) Math.floor(p[0]), 16) * 16, Math.floorDiv((int) Math.floor(p[1]), 16) * 16);
-            int walls = 0, inside = 0;
-            for (int k = 0; k < 256; k++) {
-                if (edge.building[k] < 0) continue;
-                inside++;
-                if (edge.wall[k]) walls++;
-            }
-            check(walls > 0 && inside > walls, "walls " + walls + " of " + inside);
-            // the courtyard stays open
-            t.projection.forward(lon0 + 12 * mLon, lat0, p);
-            x = (int) Math.floor(p[0]);
-            z = (int) Math.floor(p[1]);
-            Buildings.Plan plan2 = b.plan(t, Math.floorDiv(x, 16) * 16, Math.floorDiv(z, 16) * 16);
-            check(plan2.building[Math.floorMod(z, 16) * 16 + Math.floorMod(x, 16)] < 0, "courtyard is built over");
         });
 
         run("same input gives the same terrain", () -> {

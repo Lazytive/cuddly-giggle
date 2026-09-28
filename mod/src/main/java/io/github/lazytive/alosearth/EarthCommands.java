@@ -106,12 +106,6 @@ public final class EarthCommands {
             double[] dist = t.projection.distortion(ll[0], ll[1]);
             text += String.format(Locale.ROOT, ", biome %s, 1 block = %.0f-%.0f m", t.biome(x, z), dist[0], dist[1]);
             text += ", you are " + elevation(g, c.getSource().getPosition().y) + (g.layer > 0 ? " (deep layer " + g.layer + ")" : "");
-            if (g.buildings) {
-                double dLat = 0.002, dLon = 0.002 / Math.max(0.1, Math.cos(Math.toRadians(ll[1])));
-                int n = AlosEarth.buildings().around(ll[0] - dLon, ll[1] - dLat, ll[0] + dLon, ll[1] + dLat).size();
-                text += n > 0 ? ", " + n + " buildings mapped within about 200 m"
-                    : ", no buildings mapped near here in OpenStreetMap (try /earth goto tokyo, london or new_york)";
-            }
         }
         String msg = text;
         c.getSource().sendSuccess(() -> Component.literal(msg), false);
@@ -121,9 +115,7 @@ public final class EarthCommands {
     private static int status(CommandContext<CommandSourceStack> c) {
         EarthChunkGenerator g = generator(c.getSource());
         if (g == null) return 0;
-        String msg = "ALOS Earth data: " + g.terrain().data.describe() + ". Buildings: "
-            + (g.buildings ? "on in this world, " + AlosEarth.buildings().describe()
-                : "off (this world type has none; create a world with \"ALOS Earth (1:1 + buildings)\")");
+        String msg = "ALOS Earth data: " + g.terrain().data.describe();
         c.getSource().sendSuccess(() -> Component.literal(msg), false);
         return 1;
     }
