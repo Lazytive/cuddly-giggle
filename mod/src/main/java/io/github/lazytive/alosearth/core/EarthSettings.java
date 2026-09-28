@@ -6,7 +6,7 @@ package io.github.lazytive.alosearth.core;
  * compressed so Everest peaks near y 600. {@link #TRUE_SCALE} keeps the
  * data's real proportions: 1 block = 30 m vertically too (Everest ~y 358,
  * the Mariana Trench ~y -304) with only light detail added.
- * {@link #ONE_TO_TEN} is 1 block = 10 m, fully to scale. {@link #ONE_TO_ONE} is 1 block = 1 m: oceans at their real depth, carried
+ * {@link #ONE_TO_TEN} and {@link #ONE_TO_FIVE} are 1 block = 10 m and 5 m, fully to scale. {@link #ONE_TO_ONE} is 1 block = 1 m: oceans at their real depth, carried
  * on below the world's floor by {@code deepLayers} stacked dimensions, and
  * land 1:1 near sea level, easing off so Everest fits under the build limit.
  *
@@ -34,6 +34,14 @@ public record EarthSettings(double centerLat, double centerLon, double metersPer
      */
     public static final EarthSettings ONE_TO_TEN = new EarthSettings(0.0, 24.0, 10.0, 512,
         -1152, 2240, 63, 575.0, 5750.0, 60.0, 600.0, 0.35, true, true, true, 0);
+
+    /**
+     * 1 block = 5 m with real proportions: the largest scale at which the whole Earth fits one
+     * Minecraft dimension (y -2032..2031). Everest peaks near y 1833; only the bottoms of the
+     * deepest trenches (below ~10.4 km) are trimmed to stay above bedrock.
+     */
+    public static final EarthSettings ONE_TO_FIVE = new EarthSettings(0.0, 24.0, 5.0, 512,
+        -2032, 4064, 63, 575.0, 5750.0, 60.0, 600.0, 0.3, true, true, true, 0);
 
     /** DEFAULT as new worlds get it (with the downloaded sea floor). */
     public static final EarthSettings MINECRAFT_LIKE = DEFAULT.withSeaFloor(true);

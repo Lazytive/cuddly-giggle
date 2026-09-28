@@ -61,6 +61,22 @@ final class TerrainTests {
             check(Math.abs(floor - (s.seaLevel() - depth / 10)) < 8, "1:10 sea floor " + floor + " for depth " + depth);
         });
 
+        run("1:5 option: the largest fully to-scale world", () -> {
+            EarthSettings s = EarthSettings.ONE_TO_FIVE;
+            check(Math.abs(s.landBlocks(8849) - 1769.8) < 1e-9 && s.seaLevel() + s.landBlocks(8849) + 60 < s.maxY(), "Everest fits");
+            check(s.seaLevel() - s.oceanBlocks(10400) > s.minY() + 5, "10.4 km deep fits");
+            check(s.fine() && s.deepLayers() == 0, "one dimension");
+            int[] b = new CubeProjection(s.metersPerBlock(), s.centerLat(), s.centerLon(), s.margin()).bounds();
+            for (int v : b) check(Math.abs(v) < 29_999_000, "map inside the world border");
+            Terrain t = new Terrain(s, sources(data));
+            double[] p = new double[2];
+            t.projection.forward(139.5, 35.5, p);
+            int top = t.top((int) Math.floor(p[0]), (int) Math.floor(p[1]));
+            check(Math.abs(top - (s.seaLevel() + 614.2)) < 15, "1:5 peak at " + top);
+            // anything deeper than the world allows stops just above the bedrock band
+            check(t.block((int) Math.floor(p[0]), s.minY(), (int) Math.floor(p[1])) == Palette.BEDROCK, "bedrock floor");
+        });
+
         run("1:1 option: real ocean depths through the deep layers, land fits", () -> {
             EarthSettings s = EarthSettings.ONE_TO_ONE;
             double everest = s.seaLevel() + s.landBlocks(8849);

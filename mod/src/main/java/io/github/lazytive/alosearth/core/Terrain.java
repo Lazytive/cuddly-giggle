@@ -412,7 +412,7 @@ public final class Terrain {
         float[] distSea = distance(isSea);
 
         int[] top = new int[nn], water = new int[nn];
-        int minTop = s.bottomY() + 1, maxTop = s.maxY() - 1;
+        int minTop = s.bottomY() + 6, maxTop = s.maxY() - 1; // floors stay above the bedrock band
         for (int i = 0; i < nn; i++) {
             water[i] = Integer.MIN_VALUE;
             if (isSea[i]) {
