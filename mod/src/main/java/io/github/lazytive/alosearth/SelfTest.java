@@ -30,7 +30,7 @@ final class SelfTest {
 
     static boolean enabled() {
         String v = System.getenv("ALOSEARTH_SELFTEST");
-        return "1".equals(v) || "auto".equals(v);
+        return "1".equals(v) || "auto".equals(v) || "buildings".equals(v);
     }
 
     static void run(MinecraftServer server) {
@@ -38,6 +38,7 @@ final class SelfTest {
         List<String> notes = new ArrayList<>();
         try {
             if ("auto".equals(System.getenv("ALOSEARTH_SELFTEST"))) checkAutoDownload(server, errors, notes);
+            else if ("buildings".equals(System.getenv("ALOSEARTH_SELFTEST"))) checkBuildings(server, errors, notes);
             else check(server, errors, notes);
         } catch (Throwable e) {
             AlosEarth.LOG.error("self-test crashed", e);
@@ -88,6 +89,46 @@ final class SelfTest {
         if (!t.settings.seaFloor()) errors.add("new worlds should use the downloaded sea floor");
         else if (floor > t.settings.seaLevel() - t.settings.oceanBlocks(5000)) errors.add("ocean is too shallow: floor " + floor);
         notes.add("data: " + t.data.describe());
+    }
+
+    /** A 1:1 world with buildings: Tokyo Station's neighbourhood must have buildings. */
+    private static void checkBuildings(MinecraftServer server, List<String> errors, List<String> notes) {
+        ServerLevel level = server.overworld();
+        if (!(level.getChunkSource().getGenerator() instanceof EarthChunkGenerator gen) || !gen.buildings) {
+            errors.add("overworld is not an ALOS Earth world with buildings");
+            return;
+        }
+        Terrain t = gen.terrain();
+        double[] p = new double[2];
+        t.projection.forward(139.7671, 35.6812, p);
+        int cx = (int) Math.floor(p[0]) >> 4, cz = (int) Math.floor(p[1]) >> 4;
+        java.util.Set<Block> kinds = new java.util.HashSet<>();
+        for (int i = Palette.WHITE_CONCRETE; i < Palette.BLOCKS.length; i++) kinds.add(gen.states()[i].getBlock());
+        int count = 0, tallest = Integer.MIN_VALUE;
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+                level.getChunk(cx + dx, cz + dz);
+                for (int x = 0; x < 16; x += 2) {
+                    for (int z = 0; z < 16; z += 2) {
+                        int bx = ((cx + dx) << 4) + x, bz = ((cz + dz) << 4) + z;
+                        int ground = t.top(bx, bz);
+                        for (int y = ground; y < ground + 250; y += 2) {
+                            if (kinds.contains(level.getBlockState(new BlockPos(bx, y, bz)).getBlock())) {
+                                count++;
+                                tallest = Math.max(tallest, y - ground);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        var b = AlosEarth.buildings();
+        notes.add("building blocks sampled around Tokyo Station: " + count + ", tallest " + tallest + " blocks; " + b.describe());
+        if (b.downloaded.get() == 0 && b.failures.get() > 0) {
+            notes.add("BUILDINGS SERVICE UNAVAILABLE: " + b.lastError);
+        } else if (count < 200) {
+            errors.add("too few building blocks: " + count);
+        }
     }
 
     private static void checkLayers(MinecraftServer server, ServerLevel level, EarthChunkGenerator gen, Terrain t,

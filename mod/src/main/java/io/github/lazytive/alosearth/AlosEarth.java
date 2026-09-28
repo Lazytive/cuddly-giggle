@@ -20,6 +20,7 @@ public final class AlosEarth implements ModInitializer {
     public static final Logger LOG = LoggerFactory.getLogger("ALOS Earth");
 
     private static volatile DataSources data;
+    private static volatile io.github.lazytive.alosearth.core.Buildings buildings;
     private static final Map<EarthSettings, Terrain> TERRAINS = new ConcurrentHashMap<>();
 
     public static ResourceLocation id(String path) {
@@ -58,6 +59,18 @@ public final class AlosEarth implements ModInitializer {
             }
         }
         return d;
+    }
+
+    /** OpenStreetMap buildings (only opened by worlds that place them). */
+    public static io.github.lazytive.alosearth.core.Buildings buildings() {
+        var b = buildings;
+        if (b == null) {
+            synchronized (AlosEarth.class) {
+                b = buildings;
+                if (b == null) buildings = b = EarthConfig.load().openBuildings();
+            }
+        }
+        return b;
     }
 
     /** The terrain for a world's settings (shared by the chunk generator and the biome source). */

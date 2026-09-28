@@ -3,6 +3,7 @@
   "values": [
     "alosearth:earth",
     "alosearth:earth_true_scale",
-    "alosearth:earth_1to1"
+    "alosearth:earth_1to1",
+    "alosearth:earth_1to1_buildings"
   ]
 }
