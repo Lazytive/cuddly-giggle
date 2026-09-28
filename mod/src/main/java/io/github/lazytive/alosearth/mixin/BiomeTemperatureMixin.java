@@ -11,22 +11,21 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Snow by real altitude in ALOS Earth worlds (see {@link EarthClimate}). */
+/**
+ * Snow by real altitude in ALOS Earth worlds (see {@link EarthClimate}): vanilla's result has its
+ * own "colder above y 80" part taken back out, and the real-altitude cooling put in instead.
+ */
 @Mixin(Biome.class)
 public abstract class BiomeTemperatureMixin {
     @Shadow
     @Final
     private static PerlinSimplexNoise TEMPERATURE_NOISE;
 
-    @Shadow
-    @Final
-    private Biome.ClimateSettings climateSettings;
-
-    @Inject(method = "getHeightAdjustedTemperature", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "getHeightAdjustedTemperature", at = @At("RETURN"), cancellable = true)
     private void alosearth$realAltitude(BlockPos pos, CallbackInfoReturnable<Float> cir) {
         if (EarthClimate.active == null) return;
-        float base = climateSettings.temperatureModifier().modifyTemperature(pos, climateSettings.temperature());
         double noise = TEMPERATURE_NOISE.getValue(pos.getX() / 8.0, pos.getZ() / 8.0, false);
-        cir.setReturnValue((float) (base - EarthClimate.drop(pos.getY(), noise)));
+        float vanillaDrop = pos.getY() > 80 ? ((float) (noise * 8.0) + pos.getY() - 80.0F) * 0.05F / 40.0F : 0;
+        cir.setReturnValue((float) (cir.getReturnValue() + vanillaDrop - EarthClimate.drop(pos.getY(), noise)));
     }
 }
