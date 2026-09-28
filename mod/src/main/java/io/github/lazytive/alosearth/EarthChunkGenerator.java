@@ -215,21 +215,48 @@ public final class EarthChunkGenerator extends ChunkGenerator {
                                  StructureTemplateManager templateManager) {
         // structures belong to the surface world, not the deep layers under it
         if (layer != 0) return;
+        // Structure placement checks biomes through the biome source, which answers from climate alone
+        // unless the terrain there is already worked out (so far-away searches stay cheap). Work it out
+        // around this chunk first, so these checks see the real rivers, coasts and mountains.
+        Terrain t = terrain();
+        int x0 = chunk.getPos().getMinBlockX(), z0 = chunk.getPos().getMinBlockZ();
+        for (int dz = -Terrain.TILE / 2; dz <= 16 + Terrain.TILE / 2; dz += Terrain.TILE / 2) {
+            for (int dx = -Terrain.TILE / 2; dx <= 16 + Terrain.TILE / 2; dx += Terrain.TILE / 2) t.tileAt(x0 + dx, z0 + dz);
+        }
         super.createStructures(registryAccess, structureState, structureManager, chunk, templateManager);
-        if (!settings.minecraftFeel() || chunk.getAllStarts().isEmpty()) return;
-        // villages don't get built on cliffs or steep mountainsides
+        if (chunk.getAllStarts().isEmpty()) return;
         var registry = registryAccess.registryOrThrow(net.minecraft.core.registries.Registries.STRUCTURE);
         java.util.Map<net.minecraft.world.level.levelgen.structure.Structure, net.minecraft.world.level.levelgen.structure.StructureStart>
             keep = new java.util.HashMap<>(chunk.getAllStarts());
-        boolean changed = keep.entrySet().removeIf(e -> registry.wrapAsHolder(e.getKey()).is(net.minecraft.tags.StructureTags.VILLAGE)
-            && steep(chunk.getPos()));
+        boolean changed = keep.entrySet().removeIf(e -> !fits(registry.getKey(e.getKey()), e.getKey(), e.getValue()));
         if (changed) chunk.setAllStarts(keep);
     }
 
-    /** Height range around a chunk's middle (village-sized area) bigger than a village can adapt to. */
-    private boolean steep(ChunkPos pos) {
+    /**
+     * Whether a structure suits the real terrain where it starts: buildings on the surface need
+     * ground that isn't steep, and ocean monuments (always built at y 39 in vanilla) need a sea
+     * floor close below that, rather than hanging in deep water.
+     */
+    private boolean fits(ResourceLocation id, net.minecraft.world.level.levelgen.structure.Structure structure,
+                         net.minecraft.world.level.levelgen.structure.StructureStart start) {
+        if (id == null || !start.isValid()) return true;
+        BlockPos c = start.getBoundingBox().getCenter();
+        String path = id.getPath();
         Terrain t = terrain();
-        int cx = pos.getMiddleBlockX(), cz = pos.getMiddleBlockZ(), lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
+        if (path.equals("monument")) {
+            int floor = t.top(c.getX(), c.getZ());
+            return floor >= 22 && floor <= 38 && t.surface(c.getX(), c.getZ()) > floor + 20;
+        }
+        boolean onSurface = structure.step() == GenerationStep.Decoration.SURFACE_STRUCTURES
+            && !path.startsWith("ruined_portal") && !path.startsWith("shipwreck") && !path.startsWith("ocean_ruin")
+            && !path.equals("buried_treasure");
+        return !onSurface || !steep(c.getX(), c.getZ());
+    }
+
+    /** Height range within ~24 blocks bigger than a building can sit on (it would be half buried or on stilts). */
+    private boolean steep(int cx, int cz) {
+        Terrain t = terrain();
+        int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
         for (int dz = -24; dz <= 24; dz += 8) {
             for (int dx = -24; dx <= 24; dx += 8) {
                 int s = t.surface(cx + dx, cz + dz);
@@ -237,7 +264,7 @@ public final class EarthChunkGenerator extends ChunkGenerator {
                 hi = Math.max(hi, s);
             }
         }
-        return hi - lo > 14;
+        return hi - lo > 12;
     }
 
     @Override

@@ -49,7 +49,15 @@ character on top of the real shape. It's in every world type:
   so plains get snow from about 3 km up, taiga from about 1.3 km. The
   snow line and tree line follow the real ones (the Alps: snow line about
   2,900 m, tree line about 2,000 m).
-* **Villages:** they aren't placed on cliffs or steep mountainsides.
+* **Structures** (all worlds, including old ones, for newly generated
+  chunks):
+  * Placement checks see the real terrain's biomes, so villages don't land
+    in rivers or the sea, and shipwrecks aren't left on land.
+  * Surface buildings (villages, outposts, temples, witch huts, igloos,
+    mansions) aren't placed on steep ground.
+  * Ocean monuments, which vanilla always builds at y 39, are only placed
+    where the sea floor is just below that, instead of hanging in deep
+    water.
 
 Worlds made with earlier betas keep generating exactly as before, so newly
 explored chunks still match the old ones.
