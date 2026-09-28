@@ -124,6 +124,28 @@ final class SelfTest {
         }
         var b = AlosEarth.buildings();
         notes.add("building blocks sampled around Tokyo Station: " + count + ", tallest " + tallest + " blocks; " + b.describe());
+        // the tallest tower nearby must stand at its full height
+        io.github.lazytive.alosearth.core.Buildings.Building tower = null;
+        for (var bb : b.around(139.762, 35.677, 139.772, 35.686)) if (tower == null || bb.height() > tower.height()) tower = bb;
+        if (tower != null) {
+            double[] r = tower.rings().get(0);
+            int highest = Integer.MIN_VALUE, groundThere = 0;
+            for (int v = 0; v < r.length / 2; v++) { // just inside each corner
+                double lon = r[2 * v] * 0.9 + (tower.west() + tower.east()) / 2 * 0.1;
+                double lat = r[2 * v + 1] * 0.9 + (tower.south() + tower.north()) / 2 * 0.1;
+                t.projection.forward(lon, lat, p);
+                int x = (int) Math.floor(p[0]), z = (int) Math.floor(p[1]);
+                level.getChunk(x >> 4, z >> 4);
+                int h = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z) - 1;
+                if (h > highest) {
+                    highest = h;
+                    groundThere = t.top(x, z);
+                }
+            }
+            notes.add(String.format("tallest nearby: %s, %.0f m; built to %d blocks above the ground", tower.id(), tower.height(),
+                highest - groundThere));
+            if (highest - groundThere < tower.height() * 0.8) errors.add("tower " + tower.id() + " is too short: " + (highest - groundThere));
+        }
         if (b.downloaded.get() == 0 && b.failures.get() > 0) {
             notes.add("BUILDINGS SERVICE UNAVAILABLE: " + b.lastError);
         } else if (count < 200) {
