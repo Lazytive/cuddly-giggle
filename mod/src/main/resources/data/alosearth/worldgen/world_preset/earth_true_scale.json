@@ -11,7 +11,8 @@
             "detail": 0.25,
             "min_y": -320,
             "height": 704,
-            "sea_floor": true
+            "sea_floor": true,
+            "version": 1
           }
         },
         "settings": {
@@ -19,7 +20,8 @@
           "detail": 0.25,
           "min_y": -320,
           "height": 704,
-          "sea_floor": true
+          "sea_floor": true,
+          "version": 1
         }
       }
     },

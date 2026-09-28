@@ -14,7 +14,8 @@
             "true_scale": true,
             "sea_floor": true,
             "true_ocean": true,
-            "sea_level": 161
+            "sea_level": 161,
+            "version": 1
           }
         },
         "settings": {
@@ -25,7 +26,8 @@
           "true_scale": true,
           "sea_floor": true,
           "true_ocean": true,
-          "sea_level": 161
+          "sea_level": 161,
+          "version": 1
         }
       }
     },

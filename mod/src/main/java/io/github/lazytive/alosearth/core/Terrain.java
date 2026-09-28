@@ -20,7 +20,22 @@ public final class Terrain {
     public final CubeProjection projection;
     public final DataSources data;
     private final Noise detailNoise = new Noise(SEED), ridgeNoise = new Noise(SEED + 1),
-        patchNoise = new Noise(SEED + 2), styleNoise = new Noise(SEED + 3);
+        patchNoise = new Noise(SEED + 2), styleNoise = new Noise(SEED + 3),
+        caveA = new Noise(SEED + 10), caveB = new Noise(SEED + 11), shapeNoise = new Noise(SEED + 12);
+    /** Caves stay within this many blocks of the surface. */
+    public static final int CAVE_DEPTH = 64;
+    /** Per-thread cache of the last column's unit vector (caves are 3-D, sampled in globe space). */
+    private final ThreadLocal<double[]> column = ThreadLocal.withInitial(() -> new double[] {Double.NaN, Double.NaN, 0, 0, 0});
+
+    /** Remote ocean islands that become mushroom fields: lat, lon. */
+    private static final double[][] MUSHROOM_ISLANDS = {
+        {-25.066, -130.100}, // Pitcairn
+        {-37.114, -12.283},  // Tristan da Cunha
+        {-15.965, -5.708},   // Saint Helena
+        {-7.946, -14.356},   // Ascension
+        {10.302, -109.217},  // Clipperton
+        {-27.113, -109.350}, // Easter Island
+    };
     private final double radius;
     /** Size of real-world features relative to the 1:30 design scale (1 at 30 m per block, 30 at 1:1). */
     private final double scale;
@@ -33,10 +48,15 @@ public final class Terrain {
         public final int[] water = new int[TILE * TILE];
         public final byte[] biome = new byte[TILE * TILE];
         public final byte[] style = new byte[TILE * TILE];
+        /** Bit 0: caves may run below; bit 1: they may open at the surface; bits 4-6: overhang depth. */
+        public final byte[] feature = new byte[TILE * TILE];
+        /** Biome of the caves under a column (-1: the surface biome). */
+        public final byte[] caveBiome = new byte[TILE * TILE];
 
         Tile(int tx, int tz) {
             this.tx = tx;
             this.tz = tz;
+            java.util.Arrays.fill(caveBiome, (byte) -1);
         }
     }
 
@@ -155,6 +175,12 @@ public final class Terrain {
     public int block(Tile t, int i, int x, int y, int z) {
         int top = t.top[i];
         if (y > top) return y <= t.water[i] ? WATER : AIR;
+        int f = t.feature[i];
+        if (f != 0) {
+            int u = (f >> 4) & 7; // an overhang: air under a 2-block lip at a cliff edge
+            if (u > 0 && y <= top - 2 && y >= top - 1 - u) return AIR;
+            if ((f & 1) != 0 && cave(top - y, (f & 2) != 0, x, y, z)) return AIR;
+        }
         int[] st = STYLES[t.style[i]];
         int d = top - y;
         if (d == 0) return resolve(st[0], y);
@@ -172,10 +198,33 @@ public final class Terrain {
         return b == BAND ? BANDS[Math.floorMod(y, BANDS.length)] : b;
     }
 
-    /** Virtual y below which a column is plain rock (stone/deepslate/bedrock only). */
+    /** Virtual y below which a column is plain rock (stone/deepslate/bedrock only, no caves). */
     public static int deepStart(Tile t, int i) {
         int[] st = STYLES[t.style[i]];
-        return t.top[i] - st[2] - st[4];
+        int d = t.top[i] - st[2] - st[4];
+        int f = t.feature[i];
+        if ((f & 1) != 0) d = Math.min(d, t.top[i] - CAVE_DEPTH - 1);
+        if (((f >> 4) & 7) != 0) d = Math.min(d, t.top[i] - 1 - ((f >> 4) & 7) - 1);
+        return d;
+    }
+
+    /** Spaghetti caves: thin winding tunnels where two 3-D noise fields are both near zero. */
+    private boolean cave(int depth, boolean opens, int x, int y, int z) {
+        if (depth > CAVE_DEPTH || depth < (opens ? 0 : 5) || y < settings.bottomY() + 10) return false;
+        double[] c = column.get();
+        if (c[0] != x || c[1] != z) {
+            double[] ll = new double[2];
+            projection.inverse(x + 0.5, z + 0.5, ll);
+            double[] v = CubeProjection.lonLatToVec(ll[0], ll[1]);
+            c[0] = x;
+            c[1] = z;
+            c[2] = v[0];
+            c[3] = v[1];
+            c[4] = v[2];
+        }
+        double r = (radius + 1.6 * y) / 26; // a little flatter than wide
+        double a = caveA.noise(c[2] * r, c[3] * r, c[4] * r), b = caveB.noise(c[2] * r, c[3] * r, c[4] * r);
+        return a * a + b * b < 0.004;
     }
 
     private int deep(int x, int y, int z) {
@@ -305,7 +354,8 @@ public final class Terrain {
         final int x0 = tx * TILE - BORDER, z0 = tz * TILE - BORDER;
         final boolean fine = s.fine();
 
-        double[] lat = new double[nn], elev = new double[nn], depth = new double[nn];
+        final boolean mc = s.minecraftFeel();
+        double[] lat = new double[nn], lonA = new double[nn], elev = new double[nn], depth = new double[nn];
         double[] px = new double[nn], py = new double[nn], pz = new double[nn];
         byte[] cls = new byte[nn];
         boolean[] valid = new boolean[nn];
@@ -323,6 +373,7 @@ public final class Terrain {
             valid[i] = true;
             double lon = ll[0], la = ll[1];
             lat[i] = la;
+            lonA[i] = lon;
             double[] v = CubeProjection.lonLatToVec(lon, la);
             px[i] = v[0] * radius;
             py[i] = v[1] * radius;
@@ -419,6 +470,8 @@ public final class Terrain {
             h[i] = base[i] + s.detail() * d;
         }
 
+        if (mc) shapeLand(valid, isLand, elev, zone, base, h, px, py, pz);
+
         float[] distLand = distance(or(isLand, isLake));
         float[] distSea = distance(isSea);
 
@@ -481,12 +534,14 @@ public final class Terrain {
             }
         }
 
+        for (int i = 0; i < nn; i++) top[i] = Math.max(minTop, Math.min(maxTop, top[i]));
+        byte[] feat = new byte[nn];
+        boolean[] boulder = new boolean[nn];
+        if (mc) rockAndCaves(valid, isLand, lake2, top, water, feat, boulder, px, py, pz, maxTop);
+
         // --- slope of the visible surface
         int[] surf = new int[nn];
-        for (int i = 0; i < nn; i++) {
-            top[i] = Math.max(minTop, Math.min(maxTop, top[i]));
-            surf[i] = Math.max(top[i], water[i]);
-        }
+        for (int i = 0; i < nn; i++) surf[i] = Math.max(top[i], water[i]);
 
         Tile t = new Tile(tx, tz);
         for (int zz = 0; zz < TILE; zz++) {
@@ -503,11 +558,99 @@ public final class Terrain {
                 }
                 t.top[o] = top[i];
                 t.water[o] = water[i];
-                classify(t, o, i, valid[i], isSea[i], lake2[i], zone[i], lat[i], base[i], h[i], slope,
-                    distSea[i], sea - top[i], px[i], py[i], pz[i]);
+                t.feature[o] = feat[i];
+                classify(t, o, i, valid[i], isSea[i], lake2[i], zone[i], lat[i], lonA[i], base[i], h[i], slope,
+                    distSea[i], sea - top[i], px[i], py[i], pz[i], boulder[i]);
             }
         }
         return t;
+    }
+
+    /**
+     * Minecraft-style land shapes on top of the real ones: wind-blown dunes in sandy deserts, and
+     * on steep ground terraces of flat ledges and short cliffs instead of smooth ramps.
+     */
+    private void shapeLand(boolean[] valid, boolean[] isLand, double[] elev, Zone[] zone, double[] base, double[] h,
+                           double[] px, double[] py, double[] pz) {
+        final int n = N, nn = n * n;
+        final EarthSettings s = settings;
+        double[] slope = new double[nn];
+        for (int z = 1; z < n - 1; z++) {
+            for (int x = 1; x < n - 1; x++) {
+                int i = z * n + x;
+                if (!valid[i] || !isLand[i]) continue;
+                double m = 0;
+                for (int j : new int[] {i - 1, i + 1, i - n, i + n}) if (valid[j] && isLand[j]) m = Math.max(m, Math.abs(h[i] - h[j]));
+                slope[i] = m;
+            }
+        }
+        double duneWl = Math.max(24, 700 / s.metersPerBlock());
+        for (int i = 0; i < nn; i++) {
+            if (!valid[i] || !isLand[i]) continue;
+            double coast = Math.max(0, Math.min(1, base[i] / 4));
+            if (zone[i] == Zone.DESERT) { // dunes about 20 m high where the sand is deep
+                double erg = smoothstep(0.0, 0.35, patchNoise.fbm(px[i] + 9000, py[i], pz[i], duneWl * 12, 2));
+                if (erg > 0) {
+                    double r = 1 - Math.abs(shapeNoise.fbm(px[i], py[i] + 9000, pz[i] * 0.4, duneWl, 2));
+                    double amp = Math.max(0.6, s.landBlocks(elev[i] + 18) - s.landBlocks(elev[i]));
+                    h[i] += erg * coast * amp * r * r;
+                }
+            }
+            double w = smoothstep(0.2, 0.8, slope[i]) * smoothstep(-0.2, 0.25, patchNoise.fbm(px[i], py[i] - 9000, pz[i], 900, 2));
+            if (w > 0) { // terraces: ledges 4-8 blocks apart joined by short cliffs
+                double step = 4 + 4 * (0.5 + 0.5 * shapeNoise.noise(px[i] / 300, py[i] / 300, pz[i] / 300));
+                double t = h[i] / step, fl = Math.floor(t);
+                double shaped = (fl + smoothstep(0.42, 0.58, t - fl)) * step;
+                h[i] += 0.8 * w * (shaped - h[i]);
+            }
+        }
+    }
+
+    /**
+     * Block-sized details: boulders on rocky ground, overhanging lips at cliff edges, and where
+     * caves may run (away from water, in about two thirds of the land).
+     */
+    private void rockAndCaves(boolean[] valid, boolean[] isLand, boolean[] lake2, int[] top, int[] water, byte[] feat,
+                              boolean[] boulder, double[] px, double[] py, double[] pz, int maxTop) {
+        final int n = N, nn = n * n;
+        boolean[] wet = new boolean[nn];
+        for (int i = 0; i < nn; i++) wet[i] = !valid[i] || water[i] > top[i] || lake2[i] || !isLand[i];
+        float[] distWet = distance(wet);
+        for (int i = 0; i < nn; i++) {
+            if (wet[i]) continue;
+            double rocky = smoothstep(-0.3, 0.4, patchNoise.fbm(px[i], py[i], pz[i] + 9000, 400, 2));
+            double bn = shapeNoise.noise(px[i] / 7 + 500, py[i] / 7, pz[i] / 7);
+            if (distWet[i] > 2 && rocky > 0.3 && bn > 0.56) {
+                top[i] = Math.min(maxTop, top[i] + 1 + (int) ((bn - 0.56) * 25));
+                boulder[i] = true;
+            }
+        }
+        for (int z = 1; z < n - 1; z++) {
+            for (int x = 1; x < n - 1; x++) {
+                int i = z * n + x;
+                if (wet[i]) continue;
+                int f = 0;
+                double cn = caveA.noise(px[i] / 700 + 77, py[i] / 700, pz[i] / 700);
+                if (cn > -0.15 && distWet[i] > 3) {
+                    f |= 1;
+                    if (shapeNoise.noise(px[i] / 40 - 300, py[i] / 40, pz[i] / 40) > 0.45) f |= 2;
+                }
+                int low = Math.min(Math.min(top[i - 1], top[i + 1]), Math.min(top[i - n], top[i + n]));
+                if (top[i] - low >= 4 && !boulder[i] && shapeNoise.noise(px[i] / 15, py[i] / 15 + 300, pz[i] / 15) > 0.2) {
+                    f |= Math.min(4, top[i] - low - 2) << 4;
+                }
+                feat[i] = (byte) f;
+            }
+        }
+    }
+
+    private static boolean nearMushroomIsland(double lat, double lon) {
+        double[] v = CubeProjection.lonLatToVec(lon, lat);
+        for (double[] m : MUSHROOM_ISLANDS) {
+            double[] w = CubeProjection.lonLatToVec(m[1], m[0]);
+            if (v[0] * w[0] + v[1] * w[1] + v[2] * w[2] > Math.cos(25.0 / 6371)) return true;
+        }
+        return false;
     }
 
     private final java.util.concurrent.atomic.AtomicInteger dataErrors = new java.util.concurrent.atomic.AtomicInteger();
@@ -563,8 +706,8 @@ public final class Terrain {
     }
 
     private void classify(Tile t, int o, int i, boolean valid, boolean sea, boolean lake, Zone zone, double lat,
-                          double base, double h, int slope, float distSea, int waterDepth,
-                          double x, double y, double z) {
+                          double lon, double base, double h, int slope, float distSea, int waterDepth,
+                          double x, double y, double z, boolean boulder) {
         double alat = Math.abs(lat);
         double v = styleNoise.fbm(x, y, z, 24, 2);
         if (!valid) {
@@ -649,6 +792,39 @@ public final class Terrain {
             else if (zone == Zone.TEMPERATE && h > settings.landBlocks(1200)) biome = "windswept_hills";
         }
 
+        if (settings.minecraftFeel()) {
+            double v2 = styleNoise.fbm(x + 3333, y, z, 12, 2), v3 = styleNoise.fbm(x - 5000, y, z, 9, 2);
+            // more of vanilla's biomes, where they fit
+            if (zone == Zone.TEMPERATE && lon > 120 && lon < 146 && lat > 22 && lat < 44 && h > settings.landBlocks(80)
+                && h < treeH && slope < 4 && patch(x + 1.0e5, y, z, 700) > 0.72) {
+                biome = "cherry_grove";
+                style = S_GRASS;
+            }
+            if (biome.equals("birch_forest") && v > 0.3) biome = "old_growth_birch_forest";
+            if (biome.equals("savanna") && slope >= 3) biome = "windswept_savanna";
+            if (biome.equals("badlands") && style == S_BAND_CLIFF && v > 0.3) biome = "eroded_badlands";
+            if ((zone == Zone.TEMPERATE || zone == Zone.BOREAL) && h >= settings.landBlocks(1000) && h < treeH && slope <= 2
+                && !biome.contains("peaks") && !biome.equals("cherry_grove") && v2 > 0.2) {
+                biome = "meadow";
+                style = S_GRASS;
+            }
+            if (zone == Zone.BOREAL && h >= settings.landBlocks(Math.max(0, snowM - 1400)) && h < treeH && slope < 4) {
+                biome = "grove";
+                style = S_SNOW;
+            }
+            if (nearMushroomIsland(lat, lon)) {
+                biome = "mushroom_fields";
+                style = S_MYCELIUM;
+            }
+            // patches, so the ground isn't one block for kilometres
+            if (style == S_GRASS && !biome.equals("mushroom_fields")) {
+                if ((zone == Zone.STEPPE || zone == Zone.SAVANNA || zone == Zone.MEDITERRANEAN) && v2 > 0.3) style = S_DRY;
+                else if ((biome.contains("forest") || biome.contains("taiga") || biome.contains("jungle")) && v2 < -0.45) style = S_MOSS;
+                else if (v3 > 0.6) style = S_GRAVEL_PATCH;
+            }
+            if (slope >= 2 && slope < 4 && v3 < -0.5 && style != S_SNOW && style != S_ICE && style != S_MYCELIUM) style = S_ANDESITE;
+        }
+
         // coasts
         if (distSea <= (settings.fine() ? 10 : 4) && h <= 3 && slope < 3 && !biome.contains("swamp")) {
             biome = cold(zone) ? "snowy_beach" : "beach";
@@ -657,7 +833,18 @@ public final class Terrain {
             biome = "stony_shore";
             style = S_ROCK;
         }
+        if (boulder) {
+            boolean humid = zone == Zone.TROPICAL || zone == Zone.TEMPERATE || biome.contains("taiga") || biome.contains("swamp");
+            style = humid && v > -0.1 ? S_MOSSY_BOULDER : S_BOULDER;
+        }
         set(t, o, biome, style);
+        if ((t.feature[o] & 1) != 0) { // what the caves below look like
+            boolean lush = zone == Zone.TROPICAL || biome.contains("jungle") || biome.contains("swamp")
+                || biome.equals("dark_forest") || biome.equals("flower_forest") || biome.equals("cherry_grove");
+            boolean drip = zone == Zone.DESERT || zone == Zone.STEPPE || zone == Zone.SAVANNA || zone == Zone.MEDITERRANEAN
+                || h >= treeH || biome.contains("badlands");
+            t.caveBiome[o] = (byte) (lush ? Palette.biome("lush_caves") : drip ? Palette.biome("dripstone_caves") : -1);
+        }
     }
 
     private String pickBiome(Zone zone, double x, double y, double z) {

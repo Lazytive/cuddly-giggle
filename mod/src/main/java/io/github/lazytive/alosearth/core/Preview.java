@@ -46,18 +46,25 @@ public final class Preview {
         COLORS[MUD] = 0x3c393d;
         COLORS[DEEPSLATE] = 0x505050;
         COLORS[BEDROCK] = 0x333333;
+        COLORS[MOSS] = 0x596e2d;
+        COLORS[MOSSY_COBBLE] = 0x6e775f;
+        COLORS[ANDESITE] = 0x888889;
+        COLORS[MYCELIUM] = 0x6f6265;
+        COLORS[COBBLE] = 0x7f7f7f;
     }
 
     /** Grass tint by biome, roughly like the game's colour map. */
     static int grassTint(String b) {
         return switch (b) {
-            case "desert", "savanna", "savanna_plateau", "badlands", "wooded_badlands" -> 0xbfb755;
+            case "desert", "savanna", "savanna_plateau", "badlands", "wooded_badlands", "eroded_badlands",
+                "windswept_savanna" -> 0xbfb755;
             case "jungle", "sparse_jungle", "bamboo_jungle" -> 0x59c93c;
             case "swamp", "mangrove_swamp" -> 0x6a7039;
             case "dark_forest" -> 0x507a32;
             case "taiga", "old_growth_pine_taiga", "old_growth_spruce_taiga", "grove" -> 0x86b87f;
             case "snowy_taiga", "snowy_plains", "snowy_slopes", "ice_spikes", "frozen_river", "snowy_beach" -> 0xe8f0f0;
             case "meadow" -> 0x83bb6d;
+            case "cherry_grove" -> 0xe8a6c8;
             case "windswept_hills", "windswept_forest", "windswept_gravelly_hills", "stony_shore" -> 0x8ab689;
             default -> 0x79c05a;
         };

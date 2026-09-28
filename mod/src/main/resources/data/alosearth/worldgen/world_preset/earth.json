@@ -7,11 +7,13 @@
         "biome_source": {
           "type": "alosearth:earth",
           "settings": {
-            "sea_floor": true
+            "sea_floor": true,
+            "version": 1
           }
         },
         "settings": {
-          "sea_floor": true
+          "sea_floor": true,
+          "version": 1
         }
       }
     },

@@ -189,6 +189,73 @@ final class TerrainTests {
             check(checked > 400, "only " + checked + " checked");
         });
 
+        run("Minecraft-feel features match across seams and exist", () -> {
+            EarthSettings s = EarthSettings.MINECRAFT_LIKE;
+            Terrain t = new Terrain(s, sources(data));
+            CubeProjection pr = t.projection;
+            Random r = new Random(5);
+            int checked = 0;
+            for (CubeProjection.Link l : pr.links) {
+                for (int k = 0; k < 30; k++) {
+                    boolean horizontal = l.edge.equals("top") || l.edge.equals("bottom");
+                    int along = 40 + r.nextInt((horizontal ? l.sx1 - l.sx0 : l.sz1 - l.sz0) - 80);
+                    int depth = 1 + r.nextInt(400);
+                    int x, z;
+                    switch (l.edge) {
+                        case "top" -> { x = l.sx0 + along; z = l.sz1 - depth; }
+                        case "bottom" -> { x = l.sx0 + along; z = l.sz0 + depth - 1; }
+                        case "left" -> { x = l.sx1 - depth; z = l.sz0 + along; }
+                        default -> { x = l.sx0 + depth - 1; z = l.sz0 + along; }
+                    }
+                    if (pr.linkAt(x + 0.5, z + 0.5) != l) continue;
+                    int ox = (int) Math.floor(l.applyX(x + 0.5, z + 0.5)), oz = (int) Math.floor(l.applyZ(x + 0.5, z + 0.5));
+                    Terrain.Tile a = t.tileAt(x, z), b = t.tileAt(ox, oz);
+                    int ia = Terrain.index(x, z), ib = Terrain.index(ox, oz);
+                    check(a.top[ia] == b.top[ib] && a.water[ia] == b.water[ib] && a.biome[ia] == b.biome[ib]
+                        && a.style[ia] == b.style[ib] && a.feature[ia] == b.feature[ib] && a.caveBiome[ia] == b.caveBiome[ib],
+                        "margin differs at " + x + "," + z + " (" + l + ")");
+                    for (int y = a.top[ia] - 70; y <= a.top[ia]; y += 3) {
+                        if (y < 8 && y >= 0) continue; // the stone/deepslate dithering is per block position, deep in the rock
+                        check(t.block(a, ia, x, y, z) == t.block(b, ib, ox, y, oz), "block differs at " + x + "," + y + "," + z);
+                    }
+                    checked++;
+                }
+            }
+            check(checked > 300, "only " + checked + " checked");
+            // features show up around the synthetic mountain
+            double[] p = new double[2];
+            t.projection.forward(139.5, 35.5, p);
+            int cx = (int) Math.floor(p[0]), cz = (int) Math.floor(p[1]);
+            int caveAir = 0, solid = 0, boulders = 0, overhangs = 0, caveCols = 0, patches = 0;
+            for (int dz = -600; dz < 600; dz += 3) {
+                for (int dx = -600; dx < 600; dx += 3) {
+                    int x = cx + dx, z = cz + dz;
+                    Terrain.Tile tile = t.tileAt(x, z);
+                    int i = Terrain.index(x, z);
+                    int st = tile.style[i];
+                    if (st == Palette.S_BOULDER || st == Palette.S_MOSSY_BOULDER) boulders++;
+                    if (st == Palette.S_MOSS || st == Palette.S_GRAVEL_PATCH || st == Palette.S_ANDESITE || st == Palette.S_DRY) patches++;
+                    if (((tile.feature[i] >> 4) & 7) != 0) overhangs++;
+                    if ((tile.feature[i] & 1) != 0) {
+                        caveCols++;
+                        for (int y = tile.top[i] - 60; y < tile.top[i] - 5; y += 2) {
+                            if (t.block(tile, i, x, y, z) == Palette.AIR) caveAir++;
+                            else solid++;
+                        }
+                    }
+                }
+            }
+            double frac = caveAir / (double) Math.max(1, caveAir + solid);
+            System.out.printf("     boulders %d, overhang columns %d, patches %d, cave columns %d, cave air %.2f%%%n",
+                boulders, overhangs, patches, caveCols, frac * 100);
+            check(boulders > 0 && patches > 0 && caveCols > 0, "features missing"); // overhangs need real cliffs: see the Alps test
+            check(frac > 0.002 && frac < 0.06, "caves should be rare but present: " + frac);
+            // the old terrain is untouched for worlds made before (version 0)
+            Terrain old = new Terrain(EarthSettings.DEFAULT.withSeaFloor(true), sources(data));
+            Terrain.Tile ot = old.tileAt(cx, cz);
+            for (int k = 0; k < ot.feature.length; k++) check(ot.feature[k] == 0 && ot.caveBiome[k] == -1, "old worlds must not change");
+        });
+
         if ("1".equals(System.getenv("ALOSEARTH_NET"))) {
             run("auto-download fetches real elevation", () -> {
                 Path dir = java.nio.file.Files.createTempDirectory("alosearth-auto");
@@ -231,6 +298,32 @@ final class TerrainTests {
                 int want = s.seaLevel() + (int) Math.round(-427 / 5.0);
                 check(Math.abs(t.surface(x, z) - want) <= 1 && t.top(x, z) < t.surface(x, z), "Dead Sea water at " + t.surface(x, z)
                     + " (want " + want + "), bed " + t.top(x, z));
+            });
+        }
+
+        if ("1".equals(System.getenv("ALOSEARTH_NET"))) {
+            run("real mountains get ledges, cliffs, overhangs and boulders", () -> {
+                Path dir = java.nio.file.Files.createTempDirectory("alosearth-alps");
+                DataSources ds = new DataSources(List.of(), List.of(), List.of(), List.of(), dir, 256L << 20);
+                Terrain t = new Terrain(EarthSettings.MINECRAFT_LIKE, ds);
+                double[] p = new double[2];
+                t.projection.forward(7.66, 45.98, p); // the Matterhorn
+                int cx = (int) p[0], cz = (int) p[1], cliffs = 0, overhangs = 0, boulders = 0, cols = 0;
+                for (int dz = -300; dz < 300; dz += 2) {
+                    for (int dx = -300; dx < 300; dx += 2) {
+                        int x = cx + dx, z = cz + dz, top = t.top(x, z);
+                        int low = Math.min(Math.min(t.top(x - 1, z), t.top(x + 1, z)), Math.min(t.top(x, z - 1), t.top(x, z + 1)));
+                        Terrain.Tile tile = t.tileAt(x, z);
+                        int i = Terrain.index(x, z);
+                        cols++;
+                        if (top - low >= 4) cliffs++;
+                        if (((tile.feature[i] >> 4) & 7) != 0) overhangs++;
+                        if (tile.style[i] == Palette.S_BOULDER || tile.style[i] == Palette.S_MOSSY_BOULDER) boulders++;
+                    }
+                }
+                System.out.printf("     Matterhorn area: cliffs %.1f%%, overhangs %.2f%%, boulders %.2f%%%n",
+                    100.0 * cliffs / cols, 100.0 * overhangs / cols, 100.0 * boulders / cols);
+                check(cliffs > cols / 100 && overhangs > 0 && boulders > 0, "mountain features missing");
             });
         }
 

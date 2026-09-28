@@ -14,7 +14,8 @@
             "land_knee": 760.0,
             "sea_floor": true,
             "true_ocean": true,
-            "deep_layers": 3
+            "deep_layers": 3,
+            "version": 1
           }
         },
         "settings": {
@@ -25,7 +26,8 @@
           "land_knee": 760.0,
           "sea_floor": true,
           "true_ocean": true,
-          "deep_layers": 3
+          "deep_layers": 3,
+          "version": 1
         }
       }
     },
@@ -64,7 +66,8 @@
             "land_knee": 760.0,
             "sea_floor": true,
             "true_ocean": true,
-            "deep_layers": 3
+            "deep_layers": 3,
+            "version": 1
           }
         },
         "settings": {
@@ -75,7 +78,8 @@
           "land_knee": 760.0,
           "sea_floor": true,
           "true_ocean": true,
-          "deep_layers": 3
+          "deep_layers": 3,
+          "version": 1
         },
         "layer": 1
       }
@@ -94,7 +98,8 @@
             "land_knee": 760.0,
             "sea_floor": true,
             "true_ocean": true,
-            "deep_layers": 3
+            "deep_layers": 3,
+            "version": 1
           }
         },
         "settings": {
@@ -105,7 +110,8 @@
           "land_knee": 760.0,
           "sea_floor": true,
           "true_ocean": true,
-          "deep_layers": 3
+          "deep_layers": 3,
+          "version": 1
         },
         "layer": 2
       }
@@ -124,7 +130,8 @@
             "land_knee": 760.0,
             "sea_floor": true,
             "true_ocean": true,
-            "deep_layers": 3
+            "deep_layers": 3,
+            "version": 1
           }
         },
         "settings": {
@@ -135,7 +142,8 @@
           "land_knee": 760.0,
           "sea_floor": true,
           "true_ocean": true,
-          "deep_layers": 3
+          "deep_layers": 3,
+          "version": 1
         },
         "layer": 3
       }

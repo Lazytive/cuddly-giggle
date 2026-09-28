@@ -47,7 +47,8 @@ import net.minecraft.world.level.levelgen.blending.Blender;
 public final class EarthChunkGenerator extends ChunkGenerator {
     private static final EarthSettings D = EarthSettings.DEFAULT;
 
-    public static final Codec<EarthSettings> SETTINGS_CODEC = RecordCodecBuilder.create(i -> i.group(
+    /** The settings fields (at most 16 fit in one codec group). */
+    private static final MapCodec<EarthSettings> SETTINGS_FIELDS = RecordCodecBuilder.mapCodec(i -> i.group(
         Codec.DOUBLE.optionalFieldOf("center_lat", D.centerLat()).forGetter(EarthSettings::centerLat),
         Codec.DOUBLE.optionalFieldOf("center_lon", D.centerLon()).forGetter(EarthSettings::centerLon),
         Codec.DOUBLE.optionalFieldOf("meters_per_block", D.metersPerBlock()).forGetter(EarthSettings::metersPerBlock),
@@ -65,7 +66,13 @@ public final class EarthChunkGenerator extends ChunkGenerator {
         Codec.BOOL.optionalFieldOf("sea_floor", false).forGetter(EarthSettings::seaFloor),
         Codec.BOOL.optionalFieldOf("true_ocean", false).forGetter(EarthSettings::trueOcean),
         Codec.intRange(0, 8).optionalFieldOf("deep_layers", 0).forGetter(EarthSettings::deepLayers)
-    ).apply(i, EarthSettings::new));
+    ).apply(i, (a, b, c, d, e, f, g, h, k, l, m, n, o, p, q, r) ->
+        new EarthSettings(a, b, c, d, e, f, g, h, k, l, m, n, o, p, q, r, 0)));
+
+    public static final Codec<EarthSettings> SETTINGS_CODEC = RecordCodecBuilder.create(i -> i.group(
+        SETTINGS_FIELDS.forGetter(s -> s),
+        Codec.INT.optionalFieldOf("version", 0).forGetter(EarthSettings::version)
+    ).apply(i, EarthSettings::withVersion));
 
     public static final MapCodec<EarthChunkGenerator> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
         BiomeSource.CODEC.fieldOf("biome_source").forGetter(ChunkGenerator::getBiomeSource),
