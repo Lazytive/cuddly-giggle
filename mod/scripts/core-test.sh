@@ -7,4 +7,4 @@ data=${1:-$here/build/testdata}
 out=$here/build/core-classes
 rm -rf "$out" && mkdir -p "$out"
 javac -d "$out" $(find "$here/src/main/java/io/github/lazytive/alosearth/core" "$here/src/test/java" -name '*.java')
-java -cp "$out" io.github.lazytive.alosearth.core.CoreTests "$data"
+java -cp "$out:$here/src/main/resources" io.github.lazytive.alosearth.core.CoreTests "$data"

@@ -1,6 +1,7 @@
 {
   "replace": false,
   "values": [
-    "alosearth:earth"
+    "alosearth:earth",
+    "alosearth:earth_true_scale"
   ]
 }

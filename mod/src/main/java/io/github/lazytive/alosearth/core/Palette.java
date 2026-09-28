@@ -53,7 +53,7 @@ public final class Palette {
         "taiga", "old_growth_pine_taiga", "old_growth_spruce_taiga", "snowy_taiga", "snowy_plains", "ice_spikes",
         "desert", "badlands", "wooded_badlands", "savanna", "savanna_plateau", "jungle", "sparse_jungle",
         "bamboo_jungle", "swamp", "mangrove_swamp", "meadow", "grove", "snowy_slopes", "frozen_peaks",
-        "jagged_peaks", "stony_peaks", "windswept_hills", "windswept_forest",
+        "jagged_peaks", "stony_peaks", "windswept_hills", "windswept_forest", "windswept_gravelly_hills",
     };
     private static final Map<String, Integer> BIOME_INDEX = new HashMap<>();
 

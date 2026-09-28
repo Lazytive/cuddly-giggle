@@ -46,8 +46,20 @@ public final class EarthBiomeSource extends BiomeSource {
         return holders.stream();
     }
 
+    /**
+     * Used by Minecraft's wide-area searches (stronghold placement, structure
+     * checks, /locate): a climate-only estimate unless the terrain there is
+     * already computed, so they never compute terrain or download elevation
+     * far from players. Chunks get exact biomes via {@link #exactBiome}.
+     */
     @Override
     public Holder<Biome> getNoiseBiome(int x, int y, int z, Climate.Sampler sampler) {
+        int bx = QuartPos.toBlock(x) + 2, bz = QuartPos.toBlock(z) + 2;
+        return holders.get(AlosEarth.terrain(settings).approximateBiome(bx, bz));
+    }
+
+    /** The biome of the actual terrain (used when a chunk is generated). */
+    public Holder<Biome> exactBiome(int x, int y, int z) {
         int bx = QuartPos.toBlock(x) + 2, bz = QuartPos.toBlock(z) + 2;
         Terrain t = AlosEarth.terrain(settings);
         return holders.get(t.tileAt(bx, bz).biome[Terrain.index(bx, bz)]);

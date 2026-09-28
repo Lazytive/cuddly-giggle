@@ -27,6 +27,20 @@ final class TerrainTests {
             check(Math.abs(s.landBlocks(100) - 10) < 0.5, "lowlands ~3x: " + s.landBlocks(100));
         });
 
+        run("true-scale option keeps real proportions", () -> {
+            EarthSettings s = EarthSettings.TRUE_SCALE;
+            check(Math.abs(s.landBlocks(8849) - 295) < 1 && Math.abs(s.landBlocks(300) - 10) < 1e-9, "land 1:30");
+            check(Math.abs(s.oceanBlocks(3000) - 100) < 1e-9, "sea 1:30");
+            check(s.seaLevel() + s.landBlocks(8849) + 20 < s.maxY(), "Everest fits");
+            check(s.seaLevel() - s.oceanBlocks(11000) > s.minY() + 5, "Mariana Trench fits");
+            Terrain t = new Terrain(s, sources(data));
+            double[] p = new double[2];
+            t.projection.forward(139.5, 35.5, p);
+            int top = t.top((int) Math.floor(p[0]), (int) Math.floor(p[1]));
+            double want = s.seaLevel() + 3071 / 30.0; // synthetic summit: 3000 + 11 + 60 m
+            check(Math.abs(top - want) < 8, "true-scale peak at " + top + ", expected about " + want);
+        });
+
         run("same input gives the same terrain", () -> {
             Terrain a = new Terrain(EarthSettings.DEFAULT, sources(data));
             Terrain b = new Terrain(EarthSettings.DEFAULT, sources(data));
@@ -44,7 +58,7 @@ final class TerrainTests {
             double[] p = new double[2];
             t.projection.forward(139.5, 35.5, p);
             int top = t.top((int) Math.floor(p[0]), (int) Math.floor(p[1]));
-            double want = s.seaLevel() + s.landBlocks(3460);
+            double want = s.seaLevel() + s.landBlocks(3071); // synthetic summit: 3000 + 11 + 60 m
             check(Math.abs(top - want) < 30, "peak at " + top + ", expected about " + want);
             t.projection.forward(139.25, 35.75, p); // lake at 500 m
             int x = (int) Math.floor(p[0]), z = (int) Math.floor(p[1]);

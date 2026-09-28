@@ -49,10 +49,10 @@ public final class Terrain {
         Zone.SAVANNA, new Pick[] {new Pick("savanna", 55), new Pick("plains", 25), new Pick("sparse_jungle", 10),
             new Pick("desert", 10)},
         Zone.DESERT, new Pick[] {new Pick("desert", 80), new Pick("badlands", 12), new Pick("savanna", 8)},
-        Zone.STEPPE, new Pick[] {new Pick("plains", 55), new Pick("sunflower_plains", 10), new Pick("savanna", 15),
-            new Pick("desert", 10), new Pick("taiga", 10)},
-        Zone.MEDITERRANEAN, new Pick[] {new Pick("plains", 35), new Pick("savanna", 15), new Pick("forest", 25),
-            new Pick("sunflower_plains", 10), new Pick("flower_forest", 15)},
+        Zone.STEPPE, new Pick[] {new Pick("savanna", 35), new Pick("desert", 20), new Pick("badlands", 20),
+            new Pick("plains", 15), new Pick("wooded_badlands", 10)},
+        Zone.MEDITERRANEAN, new Pick[] {new Pick("savanna", 35), new Pick("plains", 30), new Pick("forest", 15),
+            new Pick("sunflower_plains", 10), new Pick("flower_forest", 5), new Pick("birch_forest", 5)},
         Zone.TEMPERATE, new Pick[] {new Pick("forest", 35), new Pick("plains", 20), new Pick("birch_forest", 15),
             new Pick("dark_forest", 12), new Pick("flower_forest", 8), new Pick("sunflower_plains", 5), new Pick("meadow", 5)},
         Zone.BOREAL, new Pick[] {new Pick("taiga", 50), new Pick("old_growth_spruce_taiga", 15),
@@ -90,6 +90,38 @@ public final class Terrain {
             }
         }
         return t;
+    }
+
+    /** The tile if it has already been computed, else null (never computes or downloads). */
+    public Tile cachedTileAt(int x, int z) {
+        long key = ((long) Math.floorDiv(x, TILE) << 32) ^ (Math.floorDiv(z, TILE) & 0xffffffffL);
+        synchronized (cache) {
+            return cache.get(key);
+        }
+    }
+
+    /**
+     * A cheap biome estimate from climate alone (no elevation, no downloads):
+     * what Minecraft's wide-area searches get (stronghold placement,
+     * structure checks, /locate). Chunks themselves use the exact biome.
+     */
+    public int approximateBiome(int x, int z) {
+        Tile cached = cachedTileAt(x, z);
+        if (cached != null) return cached.biome[index(x, z)];
+        double[] ll = new double[2];
+        if (projection.inverse(x + 0.5, z + 0.5, ll) == CubeProjection.OUTSIDE) return Palette.biome("ocean");
+        double lon = ll[0], lat = ll[1];
+        double[] v = CubeProjection.lonLatToVec(lon, lat);
+        double px = v[0] * radius, py = v[1] * radius, pz = v[2] * radius;
+        int k = climateClass(lon, lat, px, py, pz);
+        if (k == 0 && data.climate.isEmpty() && BuiltinClimate.get() != null) {
+            double alat = Math.abs(lat);
+            return Palette.biome(alat < 20 ? "warm_ocean" : alat < 35 ? "lukewarm_ocean" : alat < 50 ? "ocean"
+                : alat < 62 ? "cold_ocean" : "frozen_ocean");
+        }
+        Zone zone = k > 0 ? zoneForKoppen(k) : null;
+        if (zone == null) zone = zoneForLatitude(Math.abs(lat));
+        return Palette.biome(pickBiome(zone, px, py, pz));
     }
 
     public Tile tileAt(int x, int z) {
@@ -168,10 +200,11 @@ public final class Terrain {
      * with warped borders); returns a uniform 0..1 value per blob.
      */
     private double patch(double x, double y, double z, double cell) {
-        double warp = cell * 0.35;
-        double wx = x + patchNoise.fbm(x, y, z, cell * 0.7, 2) * warp;
-        double wy = y + patchNoise.fbm(x + 5000, y, z, cell * 0.7, 2) * warp;
-        double wz = z + patchNoise.fbm(x, y + 5000, z, cell * 0.7, 2) * warp;
+        // strong domain warp so patch borders wander instead of being straight
+        double warp = cell * 1.1;
+        double wx = x + patchNoise.fbm(x, y, z, cell * 0.45, 3) * warp;
+        double wy = y + patchNoise.fbm(x + 5000, y, z, cell * 0.45, 3) * warp;
+        double wz = z + patchNoise.fbm(x, y + 5000, z, cell * 0.45, 3) * warp;
         int cx = (int) Math.floor(wx / cell), cy = (int) Math.floor(wy / cell), cz = (int) Math.floor(wz / cell);
         double best = Double.MAX_VALUE;
         int bestHash = 0;
@@ -328,15 +361,8 @@ public final class Terrain {
             elev[i] = e;
             cls[i] = (byte) c;
 
-            Zone zn = null;
-            if (!data.climate.isEmpty()) {
-                try {
-                    double k = data.climate.nearest(lon, la);
-                    if (!Double.isNaN(k)) zn = zoneForKoppen((int) k);
-                } catch (RuntimeException ex) {
-                    dataError(ex);
-                }
-            }
+            int kc = climateClass(lon, la, px[i], py[i], pz[i]);
+            Zone zn = kc > 0 ? zoneForKoppen(kc) : null;
             zone[i] = zn != null ? zn : zoneForLatitude(Math.abs(la));
         }
 
@@ -358,7 +384,7 @@ public final class Terrain {
             }
             double bumps = detailNoise.fbm(px[i], py[i], pz[i], 40, 3) * 2.2;
             double coastFade = Math.max(0, Math.min(1, base[i] / 6));
-            double mountain = smoothstep(90, 320, base[i]);
+            double mountain = smoothstep(s.landBlocks(1000), s.landBlocks(3500), base[i]);
             double ridged = 1 - Math.abs(ridgeNoise.fbm(px[i], py[i], pz[i], 150, 2)) * 2.2;
             h[i] = base[i] + s.detail() * (bumps * coastFade * (1 + 1.5 * mountain) + ridged * 14 * mountain);
         }
@@ -450,6 +476,46 @@ public final class Terrain {
         if (dataErrors.incrementAndGet() <= 5) AutoDem.log("data read failed, using the next source: " + ex);
     }
 
+    /**
+     * Koppen class (Beck numbering) at a place: from the installed climate
+     * GeoTIFF, else the bundled map (with wobbly borders); 0 if unknown/ocean.
+     */
+    private int climateClass(double lon, double la, double px, double py, double pz) {
+        if (data.climate.isEmpty()) {
+            BuiltinClimate bc = BuiltinClimate.get();
+            if (bc == null) return 0;
+            // wobble the lookup so the map's grid cells get natural borders
+            double jx = patchNoise.fbm(px + 777, py, pz, 500, 3) * 0.2;
+            double jy = patchNoise.fbm(px, py + 777, pz, 500, 3) * 0.2;
+            double wlat = Math.max(-90, Math.min(90, la + jy));
+            double wlon = lon + jx / Math.max(0.2, Math.cos(Math.toRadians(la)));
+            int k = bc.at(wlon, wlat);
+            return k != 0 ? k : nearestLandClass(bc, wlon, wlat);
+        }
+        try {
+            double k = data.climate.nearest(lon, la);
+            return Double.isNaN(k) ? 0 : (int) k;
+        } catch (RuntimeException ex) {
+            dataError(ex);
+            return 0;
+        }
+    }
+
+    /** For coastal cells the map calls ocean: the class of the nearest land cell. */
+    private static int nearestLandClass(BuiltinClimate bc, double lon, double lat) {
+        double step = 360.0 / bc.width();
+        for (int r = 1; r <= 4; r++) {
+            for (int dy = -r; dy <= r; dy++) {
+                for (int dx = -r; dx <= r; dx++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dy)) != r) continue;
+                    int k = bc.at(lon + dx * step, lat + dy * step);
+                    if (k != 0) return k;
+                }
+            }
+        }
+        return 0;
+    }
+
     private static boolean[] or(boolean[] a, boolean[] b) {
         boolean[] o = new boolean[a.length];
         for (int i = 0; i < a.length; i++) o[i] = a[i] || b[i];
@@ -466,14 +532,14 @@ public final class Terrain {
             return;
         }
         if (sea) {
-            boolean deep = waterDepth >= 40;
+            boolean deep = waterDepth >= settings.oceanBlocks(500);
             String b;
             if (alat < 20) b = "warm_ocean";
             else if (alat < 35) b = deep ? "deep_lukewarm_ocean" : "lukewarm_ocean";
             else if (alat < 50) b = deep ? "deep_ocean" : "ocean";
             else if (alat < 62) b = deep ? "deep_cold_ocean" : "cold_ocean";
             else b = deep ? "deep_frozen_ocean" : "frozen_ocean";
-            int st = waterDepth <= 12 ? (v > 0.3 ? S_CLAY : S_SAND) : (alat < 20 ? S_SAND : S_GRAVEL);
+            int st = waterDepth <= settings.oceanBlocks(150) ? (v > 0.3 ? S_CLAY : S_SAND) : (alat < 20 ? S_SAND : S_GRAVEL);
             set(t, o, b, st);
             return;
         }
@@ -483,19 +549,7 @@ public final class Terrain {
         }
 
         // base biome from the climate zone, varied in patches
-        Pick[] picks = ZONE_BIOMES.get(zone);
-        double u = patch(x, y, z, 650);
-        int total = 0;
-        for (Pick p : picks) total += p.weight;
-        double acc = 0;
-        String biome = picks[picks.length - 1].biome;
-        for (Pick p : picks) {
-            acc += p.weight / (double) total;
-            if (u < acc) {
-                biome = p.biome;
-                break;
-            }
-        }
+        String biome = pickBiome(zone, x, y, z);
         int style = switch (biome) {
             case "desert" -> S_DESERT;
             case "badlands", "wooded_badlands" -> S_BADLANDS;
@@ -505,11 +559,13 @@ public final class Terrain {
             default -> S_GRASS;
         };
         if (zone == Zone.ICE && biome.equals("snowy_plains")) style = S_ICE;
-        if (biome.equals("savanna") && h > 60) biome = "savanna_plateau";
+        if (zone == Zone.STEPPE && biome.equals("plains")) style = S_DRY;
+        if (zone == Zone.MEDITERRANEAN && biome.equals("plains") && v > 0.1) style = S_DRY;
+        if (biome.equals("savanna") && h > settings.landBlocks(700)) biome = "savanna_plateau";
         if (biome.equals("badlands") && v > 0.1) biome = "wooded_badlands";
 
         // wetlands
-        if (h <= 4 && distSea <= 6) {
+        if (h <= Math.max(2, settings.landBlocks(40)) && distSea <= 6) {
             double w = patchNoise.fbm(x + 999, y, z, 90, 2);
             if ((zone == Zone.TROPICAL || zone == Zone.SAVANNA) && w > 0.05) {
                 biome = "mangrove_swamp";
@@ -520,26 +576,32 @@ public final class Terrain {
             }
         }
 
-        // mountains
-        double snowH = settings.landBlocks(interp(alat, SNOW_LAT, SNOW_M));
+        // mountains: snow above the snow line; bare scree and rock between the
+        // tree line and the snow line; below that, steep ground is rock
+        // (banded terracotta cliffs in dry climates)
+        double snowM = interp(alat, SNOW_LAT, SNOW_M);
+        double snowH = settings.landBlocks(snowM);
+        double treeH = settings.landBlocks(Math.max(0, snowM - 900));
+        boolean dry = zone == Zone.DESERT || zone == Zone.STEPPE;
         if (zone != Zone.ICE && h >= snowH) {
             if (slope >= 4) biome = h >= snowH + 60 ? "jagged_peaks" : "frozen_peaks";
             else biome = "snowy_slopes";
             style = slope >= 4 || (slope == 3 && v > 0.15) ? S_ROCK : S_SNOW;
-        } else if (zone != Zone.ICE && h >= snowH - 70 && h > 40) {
-            switch (zone) {
-                case BOREAL, TUNDRA, STEPPE -> biome = "grove";
-                case TEMPERATE, MEDITERRANEAN -> biome = slope >= 3 ? "windswept_hills" : "meadow";
-                default -> {
-                    if (slope >= 3) biome = "stony_peaks";
-                }
+        } else if (zone != Zone.ICE && h >= treeH && h > settings.landBlocks(450)) {
+            if (dry) {
+                biome = "badlands";
+                style = slope >= 3 ? S_BAND_CLIFF : S_BADLANDS;
+            } else {
+                biome = zone == Zone.TROPICAL || zone == Zone.SAVANNA ? "stony_peaks" : "windswept_gravelly_hills";
+                style = slope >= 4 ? S_ROCK : v > 0.2 ? S_ROCK : v > -0.15 ? S_SCREE : S_DRY;
             }
-            if (slope >= 3) style = biome.equals("stony_peaks") || slope >= 5 ? S_ROCK : (v > 0.1 ? S_SCREE : S_ROCK);
+        } else if ((slope >= 2 && dry) || (slope >= 4 && zone == Zone.MEDITERRANEAN && h > settings.landBlocks(900))) {
+            biome = v > 0.3 ? "wooded_badlands" : "badlands";
+            style = S_BAND_CLIFF;
         } else if (slope >= 4) {
-            if (style == S_BADLANDS || style == S_DESERT) style = style == S_BADLANDS ? S_BAND_CLIFF : S_ROCK;
-            else style = v > 0.25 ? S_SCREE : S_ROCK;
-            if (zone == Zone.TEMPERATE && h > 100 && biome.contains("forest")) biome = "windswept_forest";
-            else if (zone == Zone.TEMPERATE && h > 100) biome = "windswept_hills";
+            style = v > 0.25 ? S_SCREE : S_ROCK;
+            if (zone == Zone.TEMPERATE && h > settings.landBlocks(1200) && biome.contains("forest")) biome = "windswept_forest";
+            else if (zone == Zone.TEMPERATE && h > settings.landBlocks(1200)) biome = "windswept_hills";
         }
 
         // coasts
@@ -551,6 +613,19 @@ public final class Terrain {
             style = S_ROCK;
         }
         set(t, o, biome, style);
+    }
+
+    private String pickBiome(Zone zone, double x, double y, double z) {
+        Pick[] picks = ZONE_BIOMES.get(zone);
+        double u = patch(x, y, z, 650);
+        int total = 0;
+        for (Pick p : picks) total += p.weight;
+        double acc = 0;
+        for (Pick p : picks) {
+            acc += p.weight / (double) total;
+            if (u < acc) return p.biome;
+        }
+        return picks[picks.length - 1].biome;
     }
 
     private static void set(Tile t, int o, String biome, int style) {

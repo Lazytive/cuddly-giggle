@@ -53,7 +53,8 @@ public final class EarthChunkGenerator extends ChunkGenerator {
         Codec.DOUBLE.optionalFieldOf("land_knee", D.landKnee()).forGetter(EarthSettings::landKnee),
         Codec.DOUBLE.optionalFieldOf("ocean_scale", D.oceanScale()).forGetter(EarthSettings::oceanScale),
         Codec.DOUBLE.optionalFieldOf("ocean_knee", D.oceanKnee()).forGetter(EarthSettings::oceanKnee),
-        Codec.DOUBLE.optionalFieldOf("detail", D.detail()).forGetter(EarthSettings::detail)
+        Codec.DOUBLE.optionalFieldOf("detail", D.detail()).forGetter(EarthSettings::detail),
+        Codec.BOOL.optionalFieldOf("true_scale", false).forGetter(EarthSettings::trueScale)
     ).apply(i, EarthSettings::new));
 
     public static final MapCodec<EarthChunkGenerator> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
@@ -89,6 +90,16 @@ public final class EarthChunkGenerator extends ChunkGenerator {
     @Override
     protected MapCodec<? extends ChunkGenerator> codec() {
         return CODEC;
+    }
+
+    @Override
+    public CompletableFuture<ChunkAccess> createBiomes(RandomState randomState, Blender blender,
+                                                       StructureManager structureManager, ChunkAccess chunk) {
+        if (biomeSource instanceof EarthBiomeSource earth) {
+            chunk.fillBiomesFromNoise((x, y, z, sampler) -> earth.exactBiome(x, y, z), randomState.sampler());
+            return CompletableFuture.completedFuture(chunk);
+        }
+        return super.createBiomes(randomState, blender, structureManager, chunk);
     }
 
     @Override

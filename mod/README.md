@@ -25,10 +25,14 @@ arrive where you would on the real Earth.
 * **Where the mod goes:** drop `alos-earth-<version>.jar` into `mods/`.
 * **Servers:** the mod only has to be installed on the server; players
   can join with an unmodded client.
-* **Single player:** choose **World Type: ALOS Earth** when creating the
-  world.
-* **Dedicated server:** set `level-type=alosearth\:earth` in
-  `server.properties` before the world is first created.
+* **Single player:** when creating the world, pick one of two world types:
+  * **ALOS Earth (Minecraft‑like):** the style described above.
+  * **ALOS Earth (true 1:30):** the data's real proportions, 1 block = 30 m
+    vertically as well. Hills are gentle, Everest peaks near y 358, and
+    oceans reach down to y −304 (the world runs from y −320 to 384).
+* **Dedicated server:** set `level-type=alosearth\:earth` (Minecraft‑like)
+  or `level-type=alosearth\:earth_true_scale` in `server.properties` before
+  the world is first created.
 
 ### Automatic updates (Prism Launcher)
 
@@ -74,11 +78,18 @@ resolved against the game or server folder:
 | `alosearth-data/aw3d30/` | JAXA ALOS AW3D30 zip bundles as downloaded (or extracted `*_DSM.tif` + `*_MSK.tif`) | optional; **preferred** over the download, and adds lakes and rivers from its water mask |
 | `alosearth-data/gebco/` | GEBCO global grid GeoTIFFs | recommended: real sea floor and poles |
 | `alosearth-data/fill/` | any lon/lat GeoTIFF DEM tiles | optional: fills gaps |
-| `alosearth-data/climate/` | Köppen‑Geiger 1 km GeoTIFF (Beck et al.) | optional: deserts, jungles, taiga where they really are |
+| `alosearth-data/climate/` | Köppen‑Geiger 1 km GeoTIFF (Beck et al.) | optional: a sharper climate map than the built‑in one |
 
 * **Order of use:** AW3D30 → fill → auto‑download → GEBCO → ocean.
 * **Turning off downloads:** set `"auto_download": false` in the config.
 * **Checking what's loaded:** run `/earth status`.
+
+**Climate is built in.** A 3 km Köppen‑Geiger climate map ships inside the
+mod, so deserts, steppe, jungle, taiga and ice caps appear where they really
+are without any download. It's from Rubel, Brugger, Haslinger & Auer (2017),
+[koeppen-geiger.vu-wien.ac.at](http://koeppen-geiger.vu-wien.ac.at), via the
+BSD‑licensed [kgcpy](https://github.com/cwru-sdle/kgcpy); see
+`scripts/make_climate.py`.
 
 Auto‑downloaded terrain contains modified Copernicus Service information
 (Copernicus DEM GLO‑30, © DLR e.V. 2010‑2014 and © Airbus Defence and Space

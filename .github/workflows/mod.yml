@@ -84,6 +84,18 @@ jobs:
           cat run/alosearth-selftest.txt
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
 
+      - name: Run the in-game self-test on a true 1:30 world
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth_true_scale/' run/server.properties
+          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          cat run/alosearth-selftest.txt
+          grep -q "world height -320..384" run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
+
       - name: Self-test a fresh world using only auto-downloaded elevation
         env:
           ALOSEARTH_SELFTEST: auto
