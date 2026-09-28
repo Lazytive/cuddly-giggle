@@ -1,9 +1,9 @@
 {
   "replace": false,
   "values": [
+    "alosearth:earth_1to10",
     "alosearth:earth",
     "alosearth:earth_true_scale",
-    "alosearth:earth_1to10",
     "alosearth:earth_1to5",
     "alosearth:earth_max",
     "alosearth:earth_1to1"

@@ -68,13 +68,15 @@ explored chunks still match the old ones.
 * **Where the mod goes:** drop `alos-earth-<version>.jar` into `mods/`.
 * **Servers:** the mod only has to be installed on the server; players
   can join with an unmodded client.
-* **Single player:** when creating the world, pick one of six world types:
+* **Single player:** "Create New World" starts on **ALOS Earth (1:10)**,
+  the recommended type: it's the closest to vanilla Minecraft's
+  proportions. You can also pick one of the other types:
+  * **ALOS Earth (1:10)** (the default): 1 block = 10 m, everything to
+    scale, see [The 1:10 and 1:5 worlds](#the-110-and-15-worlds).
   * **ALOS Earth (Minecraft‑like):** the style described above.
   * **ALOS Earth (true 1:30):** the data's real proportions, 1 block = 30 m
     vertically as well. Hills are gentle, Everest peaks near y 358, and
     oceans reach down to y −304 (the world runs from y −320 to 384).
-  * **ALOS Earth (1:10):** 1 block = 10 m, everything to scale, see
-    [The 1:10 and 1:5 worlds](#the-110-and-15-worlds).
   * **ALOS Earth (1:5):** 1 block = 5 m, everything to scale, trenches
     included.
   * **ALOS Earth (max, 1:4.9):** the biggest Earth with real proportions that
