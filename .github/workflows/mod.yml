@@ -181,10 +181,15 @@ jobs:
           set -euo pipefail
           jar=$(ls build/libs/*.jar | grep -v -- '-sources' | head -1)
           cp "$jar" build/alos-earth.jar
-          gh release delete alos-earth-beta --yes --cleanup-tag || true
-          gh release create alos-earth-beta build/alos-earth.jar tools/update-alos-earth.ps1 \
-            --prerelease --target "$GITHUB_SHA" \
-            --title "ALOS Earth beta (latest build: $MOD_VERSION)" \
-            --notes "Latest build of the ALOS Earth mod for Minecraft 1.21.1 (Fabric), from commit $GITHUB_SHA. It passed the core tests and the in-game self-test on a real server.
+          notes="Latest build of the ALOS Earth mod for Minecraft 1.21.1 (Fabric): $MOD_VERSION, from commit $GITHUB_SHA. It passed the core tests and the in-game self-tests on a real server.
 
           Install: put alos-earth.jar in your instance's mods folder (needs Fabric Loader + Fabric API), or let update-alos-earth.ps1 do it on every launch (see mod/README.md)."
+          # One permanent release whose files are replaced on every build. (Re-creating it would
+          # need a new tag at this commit, and the workflow token may not create tags on commits
+          # that change workflow files; the tag is made once, on the default branch.)
+          if ! gh release view alos-earth-beta >/dev/null 2>&1; then
+            gh release create alos-earth-beta --prerelease --target "${{ github.event.repository.default_branch }}" \
+              --title "ALOS Earth beta" --notes "$notes"
+          fi
+          gh release upload alos-earth-beta build/alos-earth.jar tools/update-alos-earth.ps1 --clobber
+          gh release edit alos-earth-beta --prerelease --title "ALOS Earth beta (latest build: $MOD_VERSION)" --notes "$notes"
