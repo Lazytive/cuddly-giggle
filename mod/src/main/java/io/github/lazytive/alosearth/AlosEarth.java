@@ -39,6 +39,14 @@ public final class AlosEarth implements ModInitializer {
             }
         });
         CommandRegistrationCallback.EVENT.register((dispatcher, registries, environment) -> EarthCommands.register(dispatcher));
+        // snow by real altitude: the overworld's settings, from when it loads (before its spawn area generates)
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents.LOAD.register((server, level) -> {
+            if (level.dimension() == net.minecraft.world.level.Level.OVERWORLD) {
+                EarthClimate.active = level.getChunkSource().getGenerator() instanceof EarthChunkGenerator g
+                    && g.settings.minecraftFeel() ? g.settings : null;
+            }
+        });
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> EarthClimate.active = null);
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             if (SelfTest.enabled()) SelfTest.run(server);
         });

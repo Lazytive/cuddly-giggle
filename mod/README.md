@@ -16,8 +16,43 @@ arrive where you would on the real Earth.
   * Mountains get meadows, groves, snowy slopes and peaks.
   * Coasts get beaches, stony shores, swamps and mangroves.
   * Rivers are widened to boat size.
-* **Underground:** solid rock with no caves. Ores, trees, plants, villages
-  and other structures, and mobs are all vanilla.
+* **Underground:** mostly solid rock with rare winding caves (see below).
+  Ores, trees, plants, villages and other structures, and mobs are all
+  vanilla.
+
+### Minecraft feel (worlds made with beta.21 or later)
+
+Real terrain is smooth and gentle, so new worlds add Minecraft‑style
+character on top of the real shape. It's in every world type:
+* **Rivers and streams:**
+  * Channels are worked out from the elevation data: which way water flows
+    and how much land drains through each point, down every valley.
+  * They widen as they collect water and have banks sloping down to them.
+  * They start below the snow line.
+* **Cliffs and ledges:** steep slopes step down in flat ledges and short
+  cliffs, and cliff edges sometimes overhang.
+* **Rocks:** boulders (mossy in damp climates), andesite outcrops on
+  hillsides, and dunes in sandy deserts.
+* **Ground patches:** coarse dirt, moss, podzol and gravel, so the ground
+  varies instead of being one block for kilometres.
+* **More biomes:**
+  * cherry groves in the hills of Japan, Korea and Taiwan;
+  * mushroom fields on a few remote islands: Pitcairn, Tristan da Cunha,
+    Saint Helena, Ascension, Clipperton and Easter Island;
+  * meadows, groves, eroded badlands, windswept savanna and old growth
+    birch forest.
+* **Caves:** rare spaghetti tunnels within 64 blocks of the surface, away
+  from water, occasionally opening at the surface. Lush caves lie under
+  jungles and swamps, dripstone caves under dry land and mountains.
+* **Snow by real altitude:** Minecraft normally cools every biome above y 80
+  whatever the scale. Here it gets colder with real height above 1,000 m,
+  so plains get snow from about 3 km up, taiga from about 1.3 km. The
+  snow line and tree line follow the real ones (the Alps: snow line about
+  2,900 m, tree line about 2,000 m).
+* **Villages:** they aren't placed on cliffs or steep mountainsides.
+
+Worlds made with earlier betas keep generating exactly as before, so newly
+explored chunks still match the old ones.
 
 ## Install
 

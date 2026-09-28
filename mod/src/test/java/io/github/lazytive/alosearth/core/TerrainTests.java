@@ -250,6 +250,25 @@ final class TerrainTests {
                 boulders, overhangs, patches, caveCols, frac * 100);
             check(boulders > 0 && patches > 0 && caveCols > 0, "features missing"); // overhangs need real cliffs: see the Alps test
             check(frac > 0.002 && frac < 0.06, "caves should be rare but present: " + frac);
+            // streams and rivers: present, and the water never hangs above neighbouring dry land
+            int riverCols = 0, spills = 0;
+            for (int dz = -900; dz < 900; dz++) {
+                for (int dx = -900; dx < 900; dx++) {
+                    int x = cx + dx, z = cz + dz;
+                    Terrain.Tile tile = t.tileAt(x, z);
+                    int i = Terrain.index(x, z);
+                    if (!Palette.BIOMES[tile.biome[i]].contains("river") || tile.water[i] <= tile.top[i]) continue;
+                    riverCols++;
+                    for (int[] d : new int[][] {{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                        Terrain.Tile nt = t.tileAt(x + d[0], z + d[1]);
+                        int j = Terrain.index(x + d[0], z + d[1]);
+                        if (nt.water[j] <= nt.top[j] && nt.top[j] < tile.water[i]) spills++;
+                    }
+                }
+            }
+            System.out.printf("     river columns %d, spilling edges %d%n", riverCols, spills);
+            check(riverCols > 500, "no rivers on the synthetic mountain: " + riverCols);
+            check(spills < riverCols / 50, "too much river water next to lower dry land: " + spills);
             // the old terrain is untouched for worlds made before (version 0)
             Terrain old = new Terrain(EarthSettings.DEFAULT.withSeaFloor(true), sources(data));
             Terrain.Tile ot = old.tileAt(cx, cz);

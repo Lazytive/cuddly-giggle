@@ -40,6 +40,8 @@ public final class Terrain {
     /** Size of real-world features relative to the 1:30 design scale (1 at 30 m per block, 30 at 1:1). */
     private final double scale;
     private final Map<Long, Tile> cache = new LinkedHashMap<>(256, 0.75f, true);
+    /** Streams and rivers from the elevation data (worlds with the Minecraft feel), else null. */
+    final Rivers rivers;
 
     /** One 64x64 tile of columns, indexed [z * 64 + x] relative to the tile corner. */
     public static final class Tile {
@@ -85,6 +87,12 @@ public final class Terrain {
     // approximate permanent snow line (metres) by absolute latitude
     private static final double[] SNOW_LAT = {0, 20, 30, 45, 60, 70, 80, 90};
     private static final double[] SNOW_M = {4600, 4800, 4200, 2600, 1300, 500, 100, 0};
+    /** Version 1 snow line: closer to the real permanent snow line (Alps ~2900 m, Norway ~1500 m). */
+    private static final double[] SNOW_M_V1 = {4800, 5000, 4400, 2900, 1500, 700, 200, 0};
+
+    private double snowLine(double alat) {
+        return interp(alat, SNOW_LAT, settings.minecraftFeel() ? SNOW_M_V1 : SNOW_M);
+    }
 
     public Terrain(EarthSettings settings, DataSources data) {
         this.settings = settings;
@@ -93,6 +101,38 @@ public final class Terrain {
             settings.margin());
         this.radius = projection.size * 2 / Math.PI;
         this.scale = 30.0 / settings.metersPerBlock();
+        double mpb = settings.metersPerBlock();
+        double minArea = mpb <= 2 ? 0.6 : mpb <= 6 ? 1.5 : mpb <= 12 ? 3 : 10;
+        this.rivers = settings.minecraftFeel() ? new Rivers(this::hydroElevation, minArea) : null;
+    }
+
+    /** Elevation for the flow model (metres, NaN at sea), from the same data as the terrain. */
+    double hydroElevation(double lon, double lat) {
+        double[] smp = new double[2], lvl = new double[1];
+        try {
+            data.aw3d30.sample(lon, lat, smp, false);
+            if (!Double.isNaN(smp[0])) return smp[1] == Rasters.CLS_SEA ? Double.NaN : smp[0];
+            if (!data.fillDem.isEmpty()) {
+                double e = data.fillDem.sample(lon, lat, false);
+                if (!Double.isNaN(e)) {
+                    int c = data.fillDem.demClass(lon, lat, lvl);
+                    return c == Rasters.CLS_SEA ? Double.NaN : c == Rasters.CLS_LAKE ? lvl[0] : e;
+                }
+            }
+            if (data.autoDem != null) {
+                double e = data.autoDem.sample(lon, lat, false);
+                if (!Double.isNaN(e)) {
+                    int c = data.autoDem.demClass(lon, lat, lvl);
+                    return c == Rasters.CLS_SEA ? Double.NaN : c == Rasters.CLS_LAKE ? lvl[0] : e;
+                }
+            }
+            double b = !data.bathymetry.isEmpty() ? data.bathymetry.sample(lon, lat, false)
+                : settings.seaFloor() && data.seaFloor != null ? data.seaFloor.sample(lon, lat, false) : Double.NaN;
+            return b > 0 ? b : Double.NaN;
+        } catch (RuntimeException ex) {
+            dataError(ex);
+            return Double.NaN;
+        }
     }
 
     // ------------------------------------------------------------ queries
@@ -534,6 +574,9 @@ public final class Terrain {
             }
         }
 
+        boolean[] river = new boolean[nn];
+        if (rivers != null) carveRivers(valid, isLand, lake2, lonA, lat, top, water, river, px, py, pz);
+        if (mc) levees(valid, isSea, top, water);
         for (int i = 0; i < nn; i++) top[i] = Math.max(minTop, Math.min(maxTop, top[i]));
         byte[] feat = new byte[nn];
         boolean[] boulder = new boolean[nn];
@@ -559,7 +602,7 @@ public final class Terrain {
                 t.top[o] = top[i];
                 t.water[o] = water[i];
                 t.feature[o] = feat[i];
-                classify(t, o, i, valid[i], isSea[i], lake2[i], zone[i], lat[i], lonA[i], base[i], h[i], slope,
+                classify(t, o, i, valid[i], isSea[i], lake2[i] || river[i], zone[i], lat[i], lonA[i], base[i], h[i], slope,
                     distSea[i], sea - top[i], px[i], py[i], pz[i], boulder[i]);
             }
         }
@@ -604,6 +647,62 @@ public final class Terrain {
                 h[i] += 0.8 * w * (shaped - h[i]);
             }
         }
+    }
+
+    /**
+     * Streams and rivers: a channel along the nearest drainage line, as wide as the area draining
+     * into it warrants (at least a block or two), with the water at the flow model's level and the
+     * banks sloping down to it (or raised to it where the ground is lower, so no water hangs).
+     */
+    private void carveRivers(boolean[] valid, boolean[] isLand, boolean[] lake2, double[] lon, double[] lat, int[] top,
+                             int[] water, boolean[] river, double[] px, double[] py, double[] pz) {
+        final EarthSettings s = settings;
+        final double mpb = s.metersPerBlock();
+        final int sea = s.seaLevel();
+        final double radius = Math.max(10 * mpb, 120);
+        for (int i = 0; i < N * N; i++) {
+            if (!valid[i] || !isLand[i] || lake2[i]) continue;
+            Rivers.Hit hit;
+            try {
+                hit = rivers.nearest(lon[i], lat[i], radius);
+            } catch (RuntimeException ex) {
+                dataError(ex);
+                continue;
+            }
+            if (hit == null || hit.waterM() > snowLine(Math.abs(lat[i]))) continue; // streams start below the ice
+            double wM = 1.5 + 2.2 * Math.sqrt(hit.areaKm2());
+            double wB = Math.max(1.6 + 0.5 * Math.log(hit.areaKm2() / rivers.minAreaKm2) / Math.log(2), wM / mpb);
+            double dB = hit.distanceM() / mpb + shapeNoise.noise(px[i] / 23, py[i] / 23, pz[i] / 23 + 700) * 0.25 * wB;
+            double half = wB / 2, bank = 2 + wB / 2;
+            if (dB > half + bank) continue;
+            int wy = sea + (int) Math.round(s.landBlocks(hit.waterM()));
+            if (dB <= half) {
+                int depthB = Math.max(1, Math.min(8, 1 + (int) (wB / 5)));
+                river[i] = true;
+                water[i] = wy;
+                top[i] = Math.min(top[i], wy - depthB);
+            } else {
+                int bankTop = wy + (int) (dB - half);
+                top[i] = Math.max(wy, Math.min(top[i], bankTop));
+            }
+        }
+    }
+
+    /** A lip of ground (levee) wherever river or lake water would otherwise touch lower dry land. */
+    private static void levees(boolean[] valid, boolean[] isSea, int[] top, int[] water) {
+        final int n = N;
+        int[] raise = new int[n * n];
+        java.util.Arrays.fill(raise, Integer.MIN_VALUE);
+        for (int z = 1; z < n - 1; z++) {
+            for (int x = 1; x < n - 1; x++) {
+                int i = z * n + x;
+                if (!valid[i] || isSea[i] || water[i] > top[i]) continue;
+                for (int j : new int[] {i - 1, i + 1, i - n, i + n}) {
+                    if (!isSea[j] && water[j] > top[j]) raise[i] = Math.max(raise[i], water[j]);
+                }
+            }
+        }
+        for (int i = 0; i < n * n; i++) if (raise[i] > top[i]) top[i] = raise[i];
     }
 
     /**
@@ -731,7 +830,7 @@ public final class Terrain {
             return;
         }
 
-        double snowM = interp(alat, SNOW_LAT, SNOW_M);
+        double snowM = snowLine(alat);
         double snowH = settings.landBlocks(snowM);
         double treeH = settings.landBlocks(Math.max(0, snowM - 900));
         // at 1:10 and 1:1 a climate-map pixel (~3 km) of mountain-top tundra would spill far down the slopes
@@ -796,7 +895,7 @@ public final class Terrain {
             double v2 = styleNoise.fbm(x + 3333, y, z, 12, 2), v3 = styleNoise.fbm(x - 5000, y, z, 9, 2);
             // more of vanilla's biomes, where they fit
             if (zone == Zone.TEMPERATE && lon > 120 && lon < 146 && lat > 22 && lat < 44 && h > settings.landBlocks(80)
-                && h < treeH && slope < 4 && patch(x + 1.0e5, y, z, 700) > 0.72) {
+                && h < treeH && slope < 4 && patch(x + 1.0e5, y, z, 700) > 0.8) {
                 biome = "cherry_grove";
                 style = S_GRASS;
             }

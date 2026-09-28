@@ -288,6 +288,20 @@ final class SelfTest {
         // 4. 1:1 worlds: the ocean carries on through the deep layers, and things sink into them
         if (t.settings.deepLayers() > 0) checkLayers(server, level, gen, t, errors, notes);
 
+        // 5. new worlds: snow by real altitude (plains are mild at sea level, freezing at 4 km)
+        if (t.settings.minecraftFeel()) {
+            if (EarthClimate.active == null) errors.add("snow-by-altitude climate not active");
+            else {
+                var plains = server.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.BIOME)
+                    .getOrThrow(net.minecraft.world.level.biome.Biomes.PLAINS);
+                int low = t.settings.seaLevel() + 5;
+                int high = (int) Math.round(t.settings.seaLevel() + t.settings.landBlocks(4000));
+                boolean warmLow = !plains.coldEnoughToSnow(new BlockPos(0, low, 0)), coldHigh = plains.coldEnoughToSnow(new BlockPos(0, high, 0));
+                notes.add("plains snow at y " + low + ": " + !warmLow + ", at y " + high + " (4 km): " + coldHigh);
+                if (!warmLow || !coldHigh) errors.add("snow line by altitude is wrong");
+            }
+        }
+
         // 4. commands are registered
         if (server.getCommands().getDispatcher().getRoot().getChild("earth") == null) errors.add("/earth missing");
         if (Palette.BLOCKS.length != gen.states().length) errors.add("block palette");

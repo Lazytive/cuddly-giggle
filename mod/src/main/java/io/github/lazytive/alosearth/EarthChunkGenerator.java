@@ -214,7 +214,30 @@ public final class EarthChunkGenerator extends ChunkGenerator {
                                  StructureManager structureManager, ChunkAccess chunk,
                                  StructureTemplateManager templateManager) {
         // structures belong to the surface world, not the deep layers under it
-        if (layer == 0) super.createStructures(registryAccess, structureState, structureManager, chunk, templateManager);
+        if (layer != 0) return;
+        super.createStructures(registryAccess, structureState, structureManager, chunk, templateManager);
+        if (!settings.minecraftFeel() || chunk.getAllStarts().isEmpty()) return;
+        // villages don't get built on cliffs or steep mountainsides
+        var registry = registryAccess.registryOrThrow(net.minecraft.core.registries.Registries.STRUCTURE);
+        java.util.Map<net.minecraft.world.level.levelgen.structure.Structure, net.minecraft.world.level.levelgen.structure.StructureStart>
+            keep = new java.util.HashMap<>(chunk.getAllStarts());
+        boolean changed = keep.entrySet().removeIf(e -> registry.wrapAsHolder(e.getKey()).is(net.minecraft.tags.StructureTags.VILLAGE)
+            && steep(chunk.getPos()));
+        if (changed) chunk.setAllStarts(keep);
+    }
+
+    /** Height range around a chunk's middle (village-sized area) bigger than a village can adapt to. */
+    private boolean steep(ChunkPos pos) {
+        Terrain t = terrain();
+        int cx = pos.getMiddleBlockX(), cz = pos.getMiddleBlockZ(), lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
+        for (int dz = -24; dz <= 24; dz += 8) {
+            for (int dx = -24; dx <= 24; dx += 8) {
+                int s = t.surface(cx + dx, cz + dz);
+                lo = Math.min(lo, s);
+                hi = Math.max(hi, s);
+            }
+        }
+        return hi - lo > 14;
     }
 
     @Override
