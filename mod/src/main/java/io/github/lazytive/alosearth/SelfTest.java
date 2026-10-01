@@ -332,6 +332,12 @@ final class SelfTest {
             else notes.add("Immersive Portals: seam portals match all " + gen.terrain().projection.links.length + " seams");
         }
 
+        // 8. with Distant Horizons: the LOD columns it gets from the terrain model pass its own checks
+        if (AlosEarth.DISTANT_HORIZONS) {
+            String problem = io.github.lazytive.alosearth.compat.DistantHorizonsEarth.check(level, gen, notes);
+            if (problem != null) errors.add("Distant Horizons: " + problem);
+        }
+
         // 4. commands are registered
         if (server.getCommands().getDispatcher().getRoot().getChild("earth") == null) errors.add("/earth missing");
         if (Palette.BLOCKS.length != gen.states().length) errors.add("block palette");

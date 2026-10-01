@@ -8,6 +8,7 @@ import com.seibel.distanthorizons.api.interfaces.block.IDhApiBlockStateWrapper;
 import com.seibel.distanthorizons.api.interfaces.override.worldGenerator.IDhApiWorldGenerator;
 import com.seibel.distanthorizons.api.interfaces.world.IDhApiLevelWrapper;
 import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiLevelLoadEvent;
+import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiLevelUnloadEvent;
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiEventParam;
 import com.seibel.distanthorizons.api.objects.data.DhApiChunk;
 import com.seibel.distanthorizons.api.objects.data.DhApiTerrainDataPoint;
@@ -15,10 +16,18 @@ import io.github.lazytive.alosearth.AlosEarth;
 import io.github.lazytive.alosearth.EarthChunkGenerator;
 import io.github.lazytive.alosearth.core.Palette;
 import io.github.lazytive.alosearth.core.Terrain;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -26,6 +35,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -37,6 +47,9 @@ import net.minecraft.world.level.block.state.BlockState;
  * Horizons is present.
  */
 public final class DistantHorizonsEarth {
+    /** The LOD generators handed to Distant Horizons, by level (for the self-test). */
+    private static final Map<ResourceKey<Level>, Generator> GENERATORS = new ConcurrentHashMap<>();
+
     private DistantHorizonsEarth() {
     }
 
@@ -48,7 +61,9 @@ public final class DistantHorizonsEarth {
                     IDhApiLevelWrapper lw = input.value.levelWrapper;
                     if (lw.getWrappedMcObject() instanceof ServerLevel level
                         && level.getChunkSource().getGenerator() instanceof EarthChunkGenerator gen && gen.layer == 0) {
-                        var result = DhApi.worldGenOverrides.registerWorldGeneratorOverride(lw, new Generator(level, gen, lw));
+                        Generator g = new Generator(level, gen, lw);
+                        var result = DhApi.worldGenOverrides.registerWorldGeneratorOverride(lw, g);
+                        if (result.success) GENERATORS.put(level.dimension(), g);
                         AlosEarth.LOG.info("Distant Horizons: terrain for {} comes straight from ALOS Earth ({})",
                             level.dimension().location(), result.success ? "ok" : result.message);
                     }
@@ -57,6 +72,96 @@ public final class DistantHorizonsEarth {
                 }
             }
         });
+        DhApi.events.bind(DhApiLevelUnloadEvent.class, new DhApiLevelUnloadEvent() {
+            @Override
+            public void onLevelUnload(DhApiEventParam<EventParam> input) {
+                GENERATORS.values().removeIf(g -> g.lw == input.value.levelWrapper);
+            }
+        });
+    }
+
+    /**
+     * For the self-test: generates LOD chunks over the test data's mountain, lake and sea the way
+     * Distant Horizons asks for them, checks every column by Distant Horizons' rules, and runs them
+     * through its own converter. Returns the problem, or null.
+     */
+    public static String check(ServerLevel level, EarthChunkGenerator gen, List<String> notes) {
+        try {
+            Generator g = GENERATORS.get(level.dimension());
+            if (g == null) return "no LOD generator registered for " + level.dimension().location();
+            int minY = level.getMinBuildHeight(), maxY = level.getMaxBuildHeight();
+            List<DhApiChunk> chunks = Collections.synchronizedList(new ArrayList<>());
+            double[][] places = {{35.5, 139.5}, {35.75, 139.25}, {35.1, 139.95}};
+            double[] p = new double[2];
+            for (double[] ll : places) {
+                gen.terrain().projection.forward(ll[1], ll[0], p);
+                int cx = ((int) Math.floor(p[0]) >> 4) - 1, cz = ((int) Math.floor(p[1]) >> 4) - 1;
+                g.generateApiChunks(cx, cz, 2, (byte) 0, EDhApiDistantGeneratorMode.FEATURES, ForkJoinPool.commonPool(), chunks::add)
+                    .get(60, TimeUnit.SECONDS);
+            }
+            if (chunks.size() != places.length * 4) return "asked for " + places.length * 4 + " chunks, got " + chunks.size();
+
+            Method convert = null; // Distant Horizons' own API-chunk converter, with its validation on
+            try {
+                convert = Class.forName("com.seibel.distanthorizons.core.dataObjects.transformers.LodDataBuilder")
+                    .getMethod("createFromApiChunkData", DhApiChunk.class, boolean.class);
+            } catch (ReflectiveOperationException e) {
+                notes.add("Distant Horizons: its chunk converter wasn't found (" + e + "), checking the columns only");
+            }
+            IDhApiBlockStateWrapper water = g.block(Palette.WATER);
+            int columns = 0, wet = 0, canopy = 0;
+            for (DhApiChunk c : chunks) {
+                for (int lz = 0; lz < 16; lz++) {
+                    for (int lx = 0; lx < 16; lx++) {
+                        List<DhApiTerrainDataPoint> col = c.getDataPoints(lx, lz);
+                        String bad = checkColumn(col, minY, maxY);
+                        if (bad != null) return "chunk " + c.chunkPosX + "," + c.chunkPosZ + " column " + lx + "," + lz + ": " + bad;
+                        columns++;
+                        for (DhApiTerrainDataPoint d : col) {
+                            if (d.blockStateWrapper == water) wet++;
+                            if (d.blockStateWrapper != water && !d.blockStateWrapper.isAir() && d.bottomYBlockPos > minY
+                                && d.skyLightLevel == 15 && d.topYBlockPos - d.bottomYBlockPos == 3) canopy++;
+                        }
+                    }
+                }
+                if (convert != null) {
+                    try {
+                        Object source = convert.invoke(null, c, true);
+                        if (source instanceof AutoCloseable a) a.close();
+                    } catch (InvocationTargetException e) {
+                        return "Distant Horizons rejected chunk " + c.chunkPosX + "," + c.chunkPosZ + ": " + e.getCause();
+                    }
+                }
+            }
+            if (wet == 0) return "no water in the LODs over the test lake and sea";
+            String version = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("distanthorizons")
+                .map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("?");
+            notes.add("Distant Horizons " + version + ": " + chunks.size() + " LOD chunks (" + columns + " columns, " + wet
+                + " with water, " + canopy + " with tree tops) pass its checks" + (convert != null ? " and converter" : ""));
+            return null;
+        } catch (Exception e) {
+            return "crashed: " + e;
+        }
+    }
+
+    /** Distant Horizons' rules for a column: whole blocks, no gaps or overlaps, from the bottom of the world to the top. */
+    private static String checkColumn(List<DhApiTerrainDataPoint> col, int minY, int maxY) {
+        if (col == null || col.isEmpty()) return "empty";
+        List<DhApiTerrainDataPoint> up = new ArrayList<>(col);
+        for (DhApiTerrainDataPoint d : up) if (d == null) return "null data point";
+        up.sort(Comparator.comparingInt(d -> d.bottomYBlockPos));
+        int y = minY;
+        for (DhApiTerrainDataPoint d : up) {
+            if (d.detailLevel != 0) return "detail level " + d.detailLevel;
+            if (d.blockStateWrapper == null || d.biomeWrapper == null) return "missing block or biome";
+            if (d.bottomYBlockPos != y) return "gap or overlap at y " + y + " (next point starts at " + d.bottomYBlockPos + ")";
+            if (d.topYBlockPos <= d.bottomYBlockPos || d.topYBlockPos - d.bottomYBlockPos >= 4096) {
+                return "bad height " + d.bottomYBlockPos + ".." + d.topYBlockPos;
+            }
+            if (d.skyLightLevel < 0 || d.skyLightLevel > 15 || d.blockLightLevel < 0 || d.blockLightLevel > 15) return "bad light";
+            y = d.topYBlockPos;
+        }
+        return y == maxY ? null : "ends at y " + y + ", not the top of the world (" + maxY + ")";
     }
 
     static final class Generator implements IDhApiWorldGenerator {

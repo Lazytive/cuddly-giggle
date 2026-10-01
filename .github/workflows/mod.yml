@@ -127,6 +127,23 @@ jobs:
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
           rm -rf run/mods
 
+      - name: Run the in-game self-test with Distant Horizons (LODs from the terrain model)
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt
+          # the same Distant Horizons version the mod was compiled against, straight into the mods folder
+          mkdir -p run/mods
+          url=$(curl -sSf "https://api.modrinth.com/v2/version/$ORG_GRADLE_PROJECT_distant_horizons_version" \
+            | python3 -c "import json,sys; v=json.load(sys.stdin); f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url']); print(v['version_number'], file=sys.stderr)")
+          curl -sSfL -o run/mods/distanthorizons.jar "$url"
+          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          grep -iE "distant ?horizons|exception|error" run/logs/latest.log | head -80 || true
+          cat run/alosearth-selftest.txt
+          grep -q "LOD chunks .* pass its checks" run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          rm -rf run/mods
+
       - name: Run the in-game self-test on a 1:10 world
         env:
           ALOSEARTH_SELFTEST: "1"
