@@ -182,7 +182,8 @@ public final class DistantHorizonsEarth {
                 for (int z = 0; z < w; z++) {
                     for (int x = 0; x < w; x++) {
                         List<DhApiTerrainDataPoint> col = api.getApiDataPointColumn(x, z);
-                        String bad = checkColumn(col, 0, maxY - minY);
+                        // (Distant Horizons labels what it hands back with the section's own detail level)
+                        String bad = checkColumn(col, 0, maxY - minY, false);
                         if (bad != null) return "detail " + detail + " column " + x + "," + z + ": " + bad;
                         int bx = sx * width + x * step + step / 2, bz = sz * width + z * step + step / 2;
                         Terrain.Tile tile = far != null ? far : t.tileAt(bx, bz);
@@ -208,13 +209,17 @@ public final class DistantHorizonsEarth {
 
     /** Distant Horizons' rules for a column: whole blocks, no gaps or overlaps, from the bottom of the world to the top. */
     private static String checkColumn(List<DhApiTerrainDataPoint> col, int minY, int maxY) {
+        return checkColumn(col, minY, maxY, true);
+    }
+
+    private static String checkColumn(List<DhApiTerrainDataPoint> col, int minY, int maxY, boolean blockSized) {
         if (col == null || col.isEmpty()) return "empty";
         List<DhApiTerrainDataPoint> up = new ArrayList<>(col);
         for (DhApiTerrainDataPoint d : up) if (d == null) return "null data point";
         up.sort(Comparator.comparingInt(d -> d.bottomYBlockPos));
         int y = minY;
         for (DhApiTerrainDataPoint d : up) {
-            if (d.detailLevel != 0) return "detail level " + d.detailLevel;
+            if (blockSized && d.detailLevel != 0) return "detail level " + d.detailLevel;
             if (d.blockStateWrapper == null || d.biomeWrapper == null) return "missing block or biome";
             if (d.bottomYBlockPos != y) return "gap or overlap at y " + y + " (next point starts at " + d.bottomYBlockPos + ")";
             if (d.topYBlockPos <= d.bottomYBlockPos || d.topYBlockPos - d.bottomYBlockPos >= 4096) {
