@@ -136,8 +136,7 @@ public final class DistantHorizonsEarth {
                 }
             }
             if (wet == 0) return "no water in the LODs over the test lake and sea";
-            String version = net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("distanthorizons")
-                .map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("?");
+            String version = io.github.lazytive.alosearth.Platform.get().modVersion("distanthorizons");
             notes.add("Distant Horizons " + version + ": " + chunks.size() + " LOD chunks (" + columns + " columns, " + wet
                 + " with water, " + canopy + " with tree tops) pass its checks" + (convert != null ? " and converter" : ""));
             if (!g.dataSources) {

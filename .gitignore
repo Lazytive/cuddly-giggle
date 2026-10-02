@@ -11,4 +11,5 @@ dist/
 # mod build output and dev server
 mod/build/
 mod/.gradle/
+mod/neoforge/.gradle/
 mod/run/

@@ -1,0 +1,77 @@
+// The NeoForge version of ALOS Earth: the same code as the Fabric version (../src/main), minus the
+// Fabric entry points and the Immersive Portals integration (Immersive Portals is Fabric-only),
+// plus the NeoForge entry point in src/main.
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.148'
+}
+
+version = project.mod_version
+group = 'io.github.lazytive.alosearth'
+base {
+    archivesName = 'alos-earth-neoforge'
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+repositories {
+    maven {
+        name = 'Modrinth'
+        url = 'https://api.modrinth.com/maven'
+        content { includeGroup 'maven.modrinth' }
+    }
+}
+
+def shared = file('../src/main')
+
+def sharedJava = tasks.register('sharedJava', Sync) {
+    from("${shared}/java") {
+        exclude 'io/github/lazytive/alosearth/fabric/**'
+        exclude 'io/github/lazytive/alosearth/compat/ImmersivePortalsSeams.java'
+    }
+    into layout.buildDirectory.dir('shared/java')
+}
+
+def sharedResources = tasks.register('sharedResources', Sync) {
+    from("${shared}/resources") {
+        exclude 'fabric.mod.json'
+        exclude 'META-INF/services/**'
+    }
+    into layout.buildDirectory.dir('shared/resources')
+}
+
+sourceSets.main.java.srcDir(sharedJava)
+sourceSets.main.resources.srcDir(sharedResources)
+
+neoForge {
+    version = project.neo_version
+    runs {
+        server {
+            server()
+            gameDirectory = project.file('../run')
+            programArgument '--nogui'
+        }
+    }
+    mods {
+        alosearth {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+dependencies {
+    // optional: with Distant Horizons installed, its far-away terrain comes straight from the terrain model
+    compileOnly "maven.modrinth:distanthorizons:${project.distant_horizons_version}"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('META-INF/neoforge.mods.toml') {
+        expand 'version': project.version
+    }
+}

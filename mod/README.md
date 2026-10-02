@@ -1,4 +1,4 @@
-# ALOS Earth (Fabric mod, beta)
+# ALOS Earth (Fabric and NeoForge mod, beta)
 
 A **world type** that generates the whole Earth at about **1 block ≈ 30 m**
 (or **1:1**, see below), on the fly, from JAXA's ALOS AW3D30 elevation data. The world is a **globe**:
@@ -76,8 +76,13 @@ explored chunks still match the old ones.
 
 ## Install
 
-* **Needs:** Minecraft **1.21.1**, Fabric Loader, and Fabric API.
-* **Where the mod goes:** drop `alos-earth-<version>.jar` into `mods/`.
+* **Needs:** Minecraft **1.21.1**, and either Fabric Loader with Fabric API,
+  or NeoForge 21.1.
+* **Where the mod goes:** drop the jar into `mods/`: `alos-earth.jar` for
+  Fabric, `alos-earth-neoforge.jar` for NeoForge (both are on the
+  [beta release](https://github.com/Lazytive/cuddly-giggle/releases/tag/alos-earth-beta)).
+  Everything works the same on both, except the see‑through seams, which
+  need Immersive Portals (Fabric only).
 * **Servers:** the mod only has to be installed on the server; players
   can join with an unmodded client.
 * **Single player:** "Create New World" starts on **ALOS Earth (1:10)**,
@@ -329,7 +334,8 @@ Known limits:
   vanilla, so lighting is a big part of the cost of new chunks.
   [ScalableLux](https://modrinth.com/mod/scalablelux) makes it a lot faster.
 * **Tested with** (in CI, on a real server): Immersive Portals, Distant
-  Horizons, C2ME (multi‑threaded chunk generation) and Lithium.
+  Horizons, C2ME (multi‑threaded chunk generation) and Lithium on Fabric;
+  the whole self‑test also runs on a NeoForge server.
 * **Mods that change biome temperature** (seasons, climate mods): ALOS
   Earth's snow‑by‑altitude change is optional, so the game still starts if
   another mod replaces the same code. Snow then follows that mod.
@@ -340,8 +346,13 @@ Known limits:
 ## Building
 
 ```bash
-./gradlew build        # needs JDK 21; the jar lands in build/libs/
+./gradlew build                # Fabric (needs JDK 21); the jar lands in build/libs/
+./gradlew -p neoforge build    # NeoForge; the jar lands in neoforge/build/libs/
 ```
+
+Both versions share the code in `src/main`; the loader-specific parts are
+the entry points (`fabric/` here, `neoforge/src` for NeoForge) and
+`Platform`.
 
 The terrain core (`io.github.lazytive.alosearth.core`) is plain Java.
 `scripts/core-test.sh` runs its tests with only a JDK, after

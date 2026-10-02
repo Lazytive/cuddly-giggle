@@ -5,23 +5,28 @@ import io.github.lazytive.alosearth.core.EarthSettings;
 import io.github.lazytive.alosearth.core.Terrain;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.minecraft.core.Registry;
-import net.minecraft.core.registries.BuiltInRegistries;
+import java.util.function.BiFunction;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public final class AlosEarth implements ModInitializer {
+/**
+ * The mod, whatever the loader: the loader's entry point (fabric/AlosEarthFabric,
+ * neoforge/AlosEarthNeoForge) registers the codecs under {@link #id}("earth") and calls these hooks
+ * from its events.
+ */
+public final class AlosEarth {
     public static final String MOD_ID = "alosearth";
     public static final Logger LOG = LoggerFactory.getLogger("ALOS Earth");
     /** Immersive Portals installed: the seams become see-through portals. */
-    public static final boolean IMMERSIVE_PORTALS = net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("immersive_portals");
+    public static final boolean IMMERSIVE_PORTALS = Platform.get().isModLoaded("immersive_portals");
     /** Distant Horizons installed: its far-away terrain comes straight from the terrain model. */
-    public static final boolean DISTANT_HORIZONS = net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("distanthorizons");
+    public static final boolean DISTANT_HORIZONS = Platform.get().isModLoaded("distanthorizons");
+    /** Set by a loader that supports Immersive Portals (Fabric): puts up the seam portals, and checks them. */
+    public static java.util.function.BiConsumer<MinecraftServer, Boolean> seamPortals;
+    public static BiFunction<ServerLevel, EarthChunkGenerator, String> seamPortalCheck;
 
     private static volatile DataSources data;
     private static final Map<EarthSettings, Terrain> TERRAINS = new ConcurrentHashMap<>();
@@ -30,19 +35,12 @@ public final class AlosEarth implements ModInitializer {
         return ResourceLocation.fromNamespaceAndPath(MOD_ID, path);
     }
 
-    @Override
-    public void onInitialize() {
-        io.github.lazytive.alosearth.core.AutoDem.logger = msg -> LOG.info("Elevation download: {}", msg);
-        Registry.register(BuiltInRegistries.CHUNK_GENERATOR, id("earth"), EarthChunkGenerator.CODEC);
-        Registry.register(BuiltInRegistries.BIOME_SOURCE, id("earth"), EarthBiomeSource.CODEC);
+    private AlosEarth() {
+    }
 
-        ServerTickEvents.END_WORLD_TICK.register(level -> {
-            if (level.getChunkSource().getGenerator() instanceof EarthChunkGenerator gen) {
-                SeamHandler.tick(level);
-                LayerHandler.tick(level, gen);
-                ThroughTheEarth.tick(level, gen);
-            }
-        });
+    /** When the mod loads (after the codecs are registered). */
+    public static void init() {
+        io.github.lazytive.alosearth.core.AutoDem.logger = msg -> LOG.info("Elevation download: {}", msg);
         if (DISTANT_HORIZONS) {
             try {
                 io.github.lazytive.alosearth.compat.DistantHorizonsEarth.register();
@@ -50,25 +48,39 @@ public final class AlosEarth implements ModInitializer {
                 LOG.warn("Distant Horizons integration unavailable: {}", e.toString());
             }
         }
-        CommandRegistrationCallback.EVENT.register((dispatcher, registries, environment) -> EarthCommands.register(dispatcher));
-        // snow by real altitude: the overworld's settings, from when it loads (before its spawn area generates)
-        net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents.LOAD.register((server, level) -> {
-            if (level.dimension() == net.minecraft.world.level.Level.OVERWORLD) {
-                EarthClimate.active = level.getChunkSource().getGenerator() instanceof EarthChunkGenerator g
-                    && g.settings.minecraftFeel() ? g.settings : null;
+    }
+
+    /** At the end of every server level tick. */
+    public static void levelTick(ServerLevel level) {
+        if (level.getChunkSource().getGenerator() instanceof EarthChunkGenerator gen) {
+            SeamHandler.tick(level);
+            LayerHandler.tick(level, gen);
+            ThroughTheEarth.tick(level, gen);
+        }
+    }
+
+    /** When a server level loads (before its spawn area generates). */
+    public static void levelLoaded(ServerLevel level) {
+        // snow by real altitude: the overworld's settings
+        if (level.dimension() == net.minecraft.world.level.Level.OVERWORLD) {
+            EarthClimate.active = level.getChunkSource().getGenerator() instanceof EarthChunkGenerator g
+                && g.settings.minecraftFeel() ? g.settings : null;
+        }
+    }
+
+    public static void serverStarted(MinecraftServer server) {
+        if (IMMERSIVE_PORTALS && seamPortals != null) {
+            try {
+                seamPortals.accept(server, EarthConfig.load().seamless_edges);
+            } catch (Throwable e) {
+                LOG.warn("Immersive Portals integration unavailable: {}", e.toString());
             }
-        });
-        ServerLifecycleEvents.SERVER_STOPPED.register(server -> EarthClimate.active = null);
-        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
-            if (IMMERSIVE_PORTALS) {
-                try {
-                    io.github.lazytive.alosearth.compat.ImmersivePortalsSeams.setUp(server, EarthConfig.load().seamless_edges);
-                } catch (Throwable e) {
-                    LOG.warn("Immersive Portals integration unavailable: {}", e.toString());
-                }
-            }
-            if (SelfTest.enabled()) SelfTest.run(server);
-        });
+        }
+        if (SelfTest.enabled()) SelfTest.run(server);
+    }
+
+    public static void serverStopped() {
+        EarthClimate.active = null;
     }
 
     /** The input data, loaded once (scanning a full AW3D30 download takes a few seconds). */

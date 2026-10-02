@@ -10,7 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import net.fabricmc.loader.api.FabricLoader;
 
 /**
  * {@code config/alosearth.json}: where the elevation data lives. Relative
@@ -37,7 +36,7 @@ public final class EarthConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     static EarthConfig load() {
-        Path file = FabricLoader.getInstance().getConfigDir().resolve("alosearth.json");
+        Path file = Platform.get().configDir().resolve("alosearth.json");
         EarthConfig cfg = new EarthConfig();
         try {
             if (Files.exists(file)) {
@@ -50,7 +49,7 @@ public final class EarthConfig {
                 try (Writer w = Files.newBufferedWriter(file)) {
                     GSON.toJson(cfg, w);
                 }
-                Path game = FabricLoader.getInstance().getGameDir();
+                Path game = Platform.get().gameDir();
                 for (String dir : List.of("aw3d30", "fill", "gebco", "climate")) {
                     Files.createDirectories(game.resolve("alosearth-data").resolve(dir));
                 }
@@ -72,7 +71,7 @@ public final class EarthConfig {
     }
 
     DataSources open() {
-        Path game = FabricLoader.getInstance().getGameDir();
+        Path game = Platform.get().gameDir();
         return new DataSources(paths(game, aw3d30), paths(game, fill_dem), paths(game, bathymetry), paths(game, climate),
             auto_download ? game.resolve(auto_download_dir == null ? "alosearth-data/auto" : auto_download_dir) : null,
             (long) Math.max(64, cache_mb) << 20);

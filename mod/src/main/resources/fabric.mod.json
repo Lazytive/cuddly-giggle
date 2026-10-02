@@ -13,10 +13,10 @@
   "environment": "*",
   "entrypoints": {
     "main": [
-      "io.github.lazytive.alosearth.AlosEarth"
+      "io.github.lazytive.alosearth.fabric.AlosEarthFabric"
     ],
     "client": [
-      "io.github.lazytive.alosearth.AlosEarthClient"
+      "io.github.lazytive.alosearth.fabric.AlosEarthFabricClient"
     ]
   },
   "depends": {
