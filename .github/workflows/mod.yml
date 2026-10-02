@@ -145,6 +145,33 @@ jobs:
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
           rm -rf run/mods
 
+      - name: Run the in-game self-test with Distant Horizons and DH SeedGen (another far-terrain generator)
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt
+          mkdir -p run/mods
+          url=$(curl -sSf "https://api.modrinth.com/v2/version/$ORG_GRADLE_PROJECT_distant_horizons_version" \
+            | python3 -c "import json,sys; v=json.load(sys.stdin); f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url'])")
+          curl -sSfL -o run/mods/distanthorizons.jar "$url"
+          # every SeedGen release for 1.21.1 on Fabric, newest first; use the newest
+          curl -sSf "https://api.modrinth.com/v2/project/distant-horizons-seedgen/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D" > seedgen.json
+          python3 -c "import json; [print('SeedGen', v['version_number'], v['date_published'][:10], [d.get('project_id') for d in v['dependencies']]) for v in json.load(open('seedgen.json'))[:5]]"
+          url=$(python3 -c "import json; v=json.load(open('seedgen.json'))[0]; f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url'])")
+          curl -sSfL -o run/mods/seedgen.jar "$url"
+          # how SeedGen hooks in (for the record)
+          unzip -l run/mods/seedgen.jar | grep -iE "mixins?\.json|\.mod\.json|services" || true
+          unzip -p run/mods/seedgen.jar fabric.mod.json || true
+          for m in $(unzip -l run/mods/seedgen.jar | grep -oE '[^ ]*mixins?\.json'); do echo "== $m"; unzip -p run/mods/seedgen.jar "$m"; done
+          unzip -l run/mods/seedgen.jar | grep -oE '[^ ]+\.class' | head -80
+          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          grep -iE "seedgen|distant horizons" run/logs/latest.log | grep -v "SQL update" | head -40 || true
+          cat run/alosearth-selftest.txt
+          grep -qiE "^\s*- [a-z_-]*seedgen" run/logs/latest.log || echo "SeedGen did not load on a dedicated server"
+          grep -q "the far-terrain generator in use is ALOS Earth's" run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          rm -rf run/mods
+
       - name: Run the in-game self-test with C2ME and Lithium (multi-threaded chunk generation)
         env:
           ALOSEARTH_SELFTEST: "1"

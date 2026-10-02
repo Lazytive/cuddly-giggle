@@ -297,6 +297,14 @@ column (one point per 2, 4, … 4096 blocks) instead of block by block, so far
 terrain fills in many times faster; nearby LODs still match the world
 exactly. Chunks you have actually visited still use their real blocks.
 
+**Other Distant Horizons generators (DH SeedGen and the like).** These
+rebuild vanilla terrain from the world seed, so in an ALOS Earth world they
+would show hills that don't exist (which then change when you walk up to
+them). ALOS Earth's own far-terrain generator therefore takes priority in
+ALOS Earth worlds; the add-on keeps working everywhere else (the Nether,
+the End, other worlds). The log says which generator each ALOS Earth world
+uses, once the server has started: look for `far terrain for`.
+
 Immersive Portals and Distant Horizons are known not to render well
 together. If you use both, set `"seamless_edges": false`.
 

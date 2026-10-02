@@ -51,6 +51,7 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class DistantHorizonsEarth {
     /** The LOD generators handed to Distant Horizons, by level (for the self-test). */
     private static final Map<ResourceKey<Level>, Generator> GENERATORS = new ConcurrentHashMap<>();
+    static final int PRIORITY = 1_000_000;
 
     private DistantHorizonsEarth() {
     }
@@ -91,6 +92,12 @@ public final class DistantHorizonsEarth {
         try {
             Generator g = GENERATORS.get(level.dimension());
             if (g == null) return "no LOD generator registered for " + level.dimension().location();
+            Object active = activeGenerator(g.lw);
+            if (active != null && active != g) {
+                return "another far-terrain generator is in use instead of ALOS Earth's: " + active.getClass().getName();
+            }
+            notes.add("Distant Horizons: the far-terrain generator in use is ALOS Earth's"
+                + (active == null ? " (couldn't ask Distant Horizons)" : ""));
             int minY = level.getMinBuildHeight(), maxY = level.getMaxBuildHeight();
             List<DhApiChunk> chunks = Collections.synchronizedList(new ArrayList<>());
             double[][] places = {{35.5, 139.5}, {35.75, 139.25}, {35.1, 139.95}};
@@ -204,6 +211,34 @@ public final class DistantHorizonsEarth {
             return null;
         } catch (Exception e) {
             return "crashed: " + e;
+        }
+    }
+
+    /**
+     * Once the server has started (every mod has had its say): which far-terrain generator each ALOS
+     * Earth level ended up with, in the log, so a clash with another Distant Horizons add-on shows.
+     */
+    public static void report() {
+        GENERATORS.forEach((dim, g) -> {
+            Object active = activeGenerator(g.lw);
+            if (active == null || active == g) {
+                AlosEarth.LOG.info("Distant Horizons: far terrain for {} comes from ALOS Earth ({})", dim.location(),
+                    g.dataSources ? "any detail" : "block by block, Distant Horizons older than 3");
+            } else {
+                AlosEarth.LOG.warn("Distant Horizons: far terrain for {} is made by {} instead of ALOS Earth, so it won't match"
+                    + " the world", dim.location(), active.getClass().getName());
+            }
+        });
+    }
+
+    /** The world generator Distant Horizons will use for a level (internal API), or null if it can't be asked. */
+    private static Object activeGenerator(IDhApiLevelWrapper lw) {
+        try {
+            Class<?> injector = Class.forName("com.seibel.distanthorizons.coreapi.DependencyInjection.WorldGeneratorInjector");
+            Object instance = injector.getField("INSTANCE").get(null);
+            return injector.getMethod("get", IDhApiLevelWrapper.class).invoke(instance, lw);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return null;
         }
     }
 
@@ -437,6 +472,16 @@ public final class DistantHorizonsEarth {
                 w = biomes[idx] = DhApi.Delayed.wrapperFactory.getBiomeWrapper(new Object[] {h}, lw);
             }
             return w;
+        }
+
+        /**
+         * Above other far-terrain generators (DH SeedGen and the like), which recreate vanilla terrain
+         * from the seed and know nothing of the Earth: in ALOS Earth levels only this one is right.
+         * (Distant Horizons uses the highest priority; on a tie the last one registered wins.)
+         */
+        @Override
+        public int getPriority() {
+            return PRIORITY;
         }
 
         @Override

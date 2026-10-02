@@ -76,6 +76,13 @@ public final class AlosEarth {
                 LOG.warn("Immersive Portals integration unavailable: {}", e.toString());
             }
         }
+        if (DISTANT_HORIZONS) {
+            try {
+                io.github.lazytive.alosearth.compat.DistantHorizonsEarth.report();
+            } catch (Throwable e) {
+                LOG.warn("Distant Horizons integration unavailable: {}", e.toString());
+            }
+        }
         if (SelfTest.enabled()) SelfTest.run(server);
     }
 
