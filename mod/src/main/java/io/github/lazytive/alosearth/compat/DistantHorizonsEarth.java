@@ -2,6 +2,7 @@ package io.github.lazytive.alosearth.compat;
 
 import com.seibel.distanthorizons.api.DhApi;
 import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiDistantGeneratorMode;
+import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiWorldGenerationStep;
 import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiWorldGeneratorReturnType;
 import com.seibel.distanthorizons.api.interfaces.block.IDhApiBiomeWrapper;
 import com.seibel.distanthorizons.api.interfaces.block.IDhApiBlockStateWrapper;
@@ -12,6 +13,7 @@ import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiLevelUn
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiEventParam;
 import com.seibel.distanthorizons.api.objects.data.DhApiChunk;
 import com.seibel.distanthorizons.api.objects.data.DhApiTerrainDataPoint;
+import com.seibel.distanthorizons.api.objects.data.IDhApiFullDataSource;
 import io.github.lazytive.alosearth.AlosEarth;
 import io.github.lazytive.alosearth.EarthChunkGenerator;
 import io.github.lazytive.alosearth.core.Palette;
@@ -138,6 +140,67 @@ public final class DistantHorizonsEarth {
                 .map(m -> m.getMetadata().getVersion().getFriendlyString()).orElse("?");
             notes.add("Distant Horizons " + version + ": " + chunks.size() + " LOD chunks (" + columns + " columns, " + wet
                 + " with water, " + canopy + " with tree tops) pass its checks" + (convert != null ? " and converter" : ""));
+            if (!g.dataSources) {
+                notes.add("Distant Horizons: API " + DhApi.getApiMajorVersion() + "." + DhApi.getApiMinorVersion()
+                    + ", so far terrain comes block by block");
+                return null;
+            }
+            return checkDataSources(level, gen, g, notes);
+        } catch (Exception e) {
+            return "crashed: " + e;
+        }
+    }
+
+    /**
+     * The far-terrain path: LOD squares at full detail (from the terrain tiles) and at 1 column per
+     * 16 x 16 blocks (from the far sampler), filled into Distant Horizons' own data source with its
+     * validation on, read back, and compared with the terrain model column by column.
+     */
+    private static String checkDataSources(ServerLevel level, EarthChunkGenerator gen, Generator g, List<String> notes) {
+        try {
+            Class<?> sectionPos = Class.forName("com.seibel.distanthorizons.core.pos.DhSectionPos");
+            Class<?> fullData = Class.forName("com.seibel.distanthorizons.core.dataObjects.fullData.sources.FullDataSourceV2");
+            Method encode = sectionPos.getMethod("encode", byte.class, int.class, int.class);
+            Method create = fullData.getMethod("createEmpty", long.class);
+            Method validate = fullData.getMethod("setRunApiSetterValidation", boolean.class);
+            Terrain t = gen.terrain();
+            int minY = level.getMinBuildHeight(), maxY = level.getMaxBuildHeight();
+            double[] p = new double[2];
+            t.projection.forward(139.5, 35.5, p); // the test data's mountain
+            StringBuilder timing = new StringBuilder();
+            for (int detail : new int[] {0, 4}) {
+                int width = 64 << detail, sx = Math.floorDiv((int) p[0], width), sz = Math.floorDiv((int) p[1], width);
+                Object source = create.invoke(null, (long) encode.invoke(null, (byte) (6 + detail), sx, sz));
+                validate.invoke(source, true);
+                IDhApiFullDataSource api = (IDhApiFullDataSource) source;
+                long t0 = System.nanoTime();
+                g.generateLod((sx * width) >> 4, (sz * width) >> 4, sx, sz, (byte) detail, api, EDhApiDistantGeneratorMode.FEATURES,
+                    ForkJoinPool.commonPool(), r -> { }).get(120, TimeUnit.SECONDS);
+                long ms = (System.nanoTime() - t0) / 1_000_000;
+                int w = api.getWidthInDataColumns(), step = 1 << detail;
+                Terrain.Tile far = detail == 0 ? null : t.far(sx * width, sz * width, step, w);
+                int off = 0;
+                for (int z = 0; z < w; z++) {
+                    for (int x = 0; x < w; x++) {
+                        List<DhApiTerrainDataPoint> col = api.getApiDataPointColumn(x, z);
+                        String bad = checkColumn(col, 0, maxY - minY);
+                        if (bad != null) return "detail " + detail + " column " + x + "," + z + ": " + bad;
+                        int bx = sx * width + x * step + step / 2, bz = sz * width + z * step + step / 2;
+                        Terrain.Tile tile = far != null ? far : t.tileAt(bx, bz);
+                        int i = far != null ? z * w + x : Terrain.index(bx, bz);
+                        int want = Math.max(tile.top[i], tile.water[i]) + 1 - minY, got = Integer.MAX_VALUE;
+                        for (DhApiTerrainDataPoint d : col) {
+                            if (d.blockStateWrapper.isAir()) got = Math.min(got, d.bottomYBlockPos);
+                        }
+                        if (got != want) off++;
+                    }
+                }
+                if (off > 0) return "detail " + detail + ": " + off + " columns don't match the terrain's surface";
+                if (source instanceof AutoCloseable a) a.close();
+                timing.append(timing.isEmpty() ? "" : ", ").append(width).append(" blocks across at 1 column per ")
+                    .append(step == 1 ? "block" : step + " blocks").append(" in ").append(ms).append(" ms");
+            }
+            notes.add("Distant Horizons: far terrain at any detail (" + timing + "), matching the terrain model");
             return null;
         } catch (Exception e) {
             return "crashed: " + e;
@@ -170,7 +233,11 @@ public final class DistantHorizonsEarth {
         private final IDhApiLevelWrapper lw;
         private final IDhApiBlockStateWrapper[] blocks = new IDhApiBlockStateWrapper[Palette.BLOCKS.length];
         private final IDhApiBiomeWrapper[] biomes = new IDhApiBiomeWrapper[Palette.BIOMES.length];
+        private final Map<Holder<Biome>, IDhApiBiomeWrapper> replaced = new ConcurrentHashMap<>();
         private volatile IDhApiBlockStateWrapper air, oakLeaves, spruceLeaves, jungleLeaves, acaciaLeaves, cherryLeaves;
+
+        /** Distant Horizons 3 and later (API 7.1): far-away terrain comes at whatever detail it needs. */
+        final boolean dataSources = dataSourcesSupported();
 
         Generator(ServerLevel level, EarthChunkGenerator gen, IDhApiLevelWrapper lw) {
             this.level = level;
@@ -178,9 +245,59 @@ public final class DistantHorizonsEarth {
             this.lw = lw;
         }
 
+        private static boolean dataSourcesSupported() {
+            try {
+                int major = DhApi.getApiMajorVersion(), minor = DhApi.getApiMinorVersion();
+                return major > 7 || major == 7 && minor >= 1;
+            } catch (Throwable e) {
+                return false;
+            }
+        }
+
         @Override
         public EDhApiWorldGeneratorReturnType getReturnType() {
-            return EDhApiWorldGeneratorReturnType.API_CHUNKS;
+            return dataSources ? EDhApiWorldGeneratorReturnType.API_DATA_SOURCES : EDhApiWorldGeneratorReturnType.API_CHUNKS;
+        }
+
+        /** Up to one column per 4096 x 4096 blocks, like Distant Horizons' own far-terrain estimate. */
+        @Override
+        public byte getLargestDataDetailLevel() {
+            return dataSources ? (byte) 12 : (byte) 0;
+        }
+
+        /**
+         * One square of LOD columns: at full detail straight from the terrain tiles (the same as the
+         * world), further out sampled once per column from the terrain model, without working out
+         * every block in between (see {@link Terrain#far}).
+         */
+        @Override
+        public CompletableFuture<Void> generateLod(int chunkPosMinX, int chunkPosMinZ, int lodPosX, int lodPosZ, byte detail,
+                                                   IDhApiFullDataSource source, EDhApiDistantGeneratorMode mode,
+                                                   ExecutorService pool, Consumer<IDhApiFullDataSource> result) {
+            return CompletableFuture.runAsync(() -> {
+                fill(chunkPosMinX << 4, chunkPosMinZ << 4, detail, source);
+                result.accept(source);
+            }, pool);
+        }
+
+        void fill(int x0, int z0, int detail, IDhApiFullDataSource source) {
+            Terrain t = gen.terrain();
+            int w = source.getWidthInDataColumns(), step = 1 << detail;
+            int minY = level.getMinBuildHeight(), maxY = level.getMaxBuildHeight();
+            Terrain.Tile far = detail == 0 ? null : t.far(x0, z0, step, w);
+            List<DhApiTerrainDataPoint> col = new ArrayList<>(8);
+            for (int z = 0; z < w; z++) {
+                for (int x = 0; x < w; x++) {
+                    col.clear();
+                    if (far == null) {
+                        int bx = x0 + x, bz = z0 + z;
+                        column(t, t.tileAt(bx, bz), Terrain.index(bx, bz), bx, bz, minY, maxY, -minY, col);
+                    } else {
+                        column(t, far, z * w + x, x0 + x * step + step / 2, z0 + z * step + step / 2, minY, maxY, -minY, col);
+                    }
+                    source.setApiDataPointColumn(x, z, EDhApiWorldGenerationStep.LIGHT, col);
+                }
+            }
         }
 
         @Override
@@ -201,33 +318,55 @@ public final class DistantHorizonsEarth {
             Terrain.Tile tile = t.tileAt(cx << 4, cz << 4);
             for (int lz = 0; lz < 16; lz++) {
                 for (int lx = 0; lx < 16; lx++) {
-                    int x = (cx << 4) + lx, z = (cz << 4) + lz, i = Terrain.index(x, z);
-                    int top = Math.max(minY, Math.min(maxY - 2, tile.top[i]));
-                    int water = Math.min(maxY - 1, tile.water[i]);
-                    IDhApiBiomeWrapper biome = biome(tile.biome[i]);
-                    List<DhApiTerrainDataPoint> col = new ArrayList<>(6);
-                    int y = minY;
-                    int soil = Math.max(minY, top - 3);
-                    if (soil > y) { col.add(point(y, soil, 0, block(t.block(tile, i, x, soil - 1, z)), biome)); y = soil; }
-                    if (top > y) { col.add(point(y, top, 0, block(t.block(tile, i, x, top - 1, z)), biome)); y = top; }
-                    col.add(point(top, top + 1, water > top ? 0 : 15, block(t.block(tile, i, x, top, z)), biome));
-                    y = top + 1;
-                    if (water > top) {
-                        col.add(point(y, water + 1, 15, block(Palette.WATER), biome));
-                        y = water + 1;
-                    } else {
-                        IDhApiBlockStateWrapper leaves = canopy(Palette.BIOMES[tile.biome[i]], x, z);
-                        if (leaves != null && y + 7 < maxY) { // tree tops over forests, so they look green from afar
-                            col.add(point(y, y + 4, 15, air(), biome));
-                            col.add(point(y + 4, y + 7, 15, leaves, biome));
-                            y += 7;
-                        }
-                    }
-                    if (y < maxY) col.add(point(y, maxY, 15, air(), biome));
+                    int x = (cx << 4) + lx, z = (cz << 4) + lz;
+                    List<DhApiTerrainDataPoint> col = new ArrayList<>(8);
+                    column(t, tile, Terrain.index(x, z), x, z, minY, maxY, 0, col);
                     c.setDataPoints(lx, lz, col);
                 }
             }
             return c;
+        }
+
+        /**
+         * One column, bottom to top: rock, soil, the surface block, then water (lit less the deeper
+         * it is, like the real thing) or, over forests, a canopy of leaves; air up to the top of the
+         * world. Heights are shifted by {@code yOff} (data sources count from the bottom of the world).
+         */
+        private void column(Terrain t, Terrain.Tile tile, int i, int x, int z, int minY, int maxY, int yOff,
+                            List<DhApiTerrainDataPoint> col) {
+            int top = Math.max(minY, Math.min(maxY - 2, tile.top[i]));
+            int water = Math.min(maxY - 1, tile.water[i]);
+            IDhApiBiomeWrapper biome = biome(tile.biome[i], x, z);
+            int y = minY;
+            int soil = Math.max(minY, top - 3);
+            if (soil > y) {
+                col.add(point(y + yOff, soil + yOff, 0, block(solid(t.block(tile, i, x, soil - 1, z))), biome));
+                y = soil;
+            }
+            if (top > y) {
+                col.add(point(y + yOff, top + yOff, 0, block(solid(t.block(tile, i, x, top - 1, z))), biome));
+                y = top;
+            }
+            int surfaceSky = water > top ? Math.max(0, 15 - (water - top)) : 15;
+            col.add(point(top + yOff, top + 1 + yOff, surfaceSky, block(solid(t.block(tile, i, x, top, z))), biome));
+            y = top + 1;
+            if (water > top) {
+                col.add(point(y + yOff, water + 1 + yOff, 15, block(Palette.WATER), biome));
+                y = water + 1;
+            } else {
+                IDhApiBlockStateWrapper leaves = canopy(Palette.BIOMES[tile.biome[i]], x, z);
+                if (leaves != null && y + 7 < maxY) { // tree tops over forests, so they look green from afar
+                    col.add(point(y + yOff, y + 4 + yOff, 15, air(), biome));
+                    col.add(point(y + 4 + yOff, y + 7 + yOff, 15, leaves, biome));
+                    y += 7;
+                }
+            }
+            if (y < maxY) col.add(point(y + yOff, maxY + yOff, 15, air(), biome));
+        }
+
+        /** Cave mouths and overhangs are too small to see from afar: rock. */
+        private static int solid(int id) {
+            return id == Palette.AIR ? Palette.STONE : id;
         }
 
         private static DhApiTerrainDataPoint point(int bottom, int top, int sky, IDhApiBlockStateWrapper b, IDhApiBiomeWrapper biome) {
@@ -280,7 +419,13 @@ public final class DistantHorizonsEarth {
             return null;
         }
 
-        private IDhApiBiomeWrapper biome(int idx) {
+        private IDhApiBiomeWrapper biome(int idx, int x, int z) {
+            // biomes from other mods (config "biomes"): the same ones the world places there
+            if (level.getChunkSource().getGenerator().getBiomeSource() instanceof io.github.lazytive.alosearth.EarthBiomeSource src
+                && src.replacesBiomes()) {
+                Holder<Biome> h = src.biomeAt(idx, x, z);
+                return replaced.computeIfAbsent(h, k -> DhApi.Delayed.wrapperFactory.getBiomeWrapper(new Object[] {k}, lw));
+            }
             IDhApiBiomeWrapper w = biomes[idx];
             if (w == null) {
                 Holder<Biome> h = level.registryAccess().registryOrThrow(Registries.BIOME).getHolderOrThrow(

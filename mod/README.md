@@ -287,10 +287,30 @@ ALOS Earth supplies its far-away terrain directly from the elevation model:
 
 This is much faster than letting Distant Horizons run the full world
 generator, so mountain ranges hundreds of kilometres away show up quickly.
-Chunks you have actually visited still use their real blocks.
+With Distant Horizons 3 or later, distant areas are sampled once per LOD
+column (one point per 2, 4, … 4096 blocks) instead of block by block, so far
+terrain fills in many times faster; nearby LODs still match the world
+exactly. Chunks you have actually visited still use their real blocks.
 
 Immersive Portals and Distant Horizons are known not to render well
 together. If you use both, set `"seamless_edges": false`.
+
+**Biomes from other mods (optional).** ALOS Earth places vanilla biomes.
+To use biomes from mods such as Terralith or Biomes O' Plenty, map ALOS
+Earth's biomes to theirs in `config/alosearth.json`:
+
+```json
+"biomes": {
+  "forest": ["terralith:forested_highlands", "minecraft:forest"],
+  "plains": ["biomesoplenty:prairie"]
+}
+```
+
+Several biomes for one entry share the land in patches a few hundred blocks
+wide. The ground itself still comes from the elevation model, but trees,
+plants, grass colour and mob spawns come from the new biome. Ids from mods
+that aren't installed are skipped (with a line in the log). This only
+affects chunks generated after the change.
 
 Known limits:
 * Your coordinates jump when you cross a seam. (Immersive Portals makes the
@@ -298,6 +318,24 @@ Known limits:
 * Blocks built or dug right at a seam aren't mirrored into the copy on the
   other side.
 * Trees near a seam aren't copied exactly.
+
+## Performance and compatibility
+
+* **Pre‑generate** with [Chunky](https://modrinth.com/plugin/chunky). The
+  world is the same every time, so pre‑generated areas match.
+* **More cache:** raise `"cache_mb"` in `config/alosearth.json` (default
+  768) if you have memory to spare; elevation is read from disk less often.
+* **Lighting:** the 1:10 (default), 1:5 and max worlds are much taller than
+  vanilla, so lighting is a big part of the cost of new chunks.
+  [ScalableLux](https://modrinth.com/mod/scalablelux) makes it a lot faster.
+* **Tested with** (in CI, on a real server): Immersive Portals, Distant
+  Horizons, C2ME (multi‑threaded chunk generation) and Lithium.
+* **Mods that change biome temperature** (seasons, climate mods): ALOS
+  Earth's snow‑by‑altitude change is optional, so the game still starts if
+  another mod replaces the same code. Snow then follows that mod.
+* **Very tall worlds:** the 1:5 and max worlds use Minecraft's full height
+  (y −2032 to 2031). Some cave and structure mods expect vanilla's −64 to
+  320 and may place things oddly there.
 
 ## Building
 

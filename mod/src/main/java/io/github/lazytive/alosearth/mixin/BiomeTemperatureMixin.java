@@ -21,9 +21,11 @@ public abstract class BiomeTemperatureMixin {
     @Final
     private static PerlinSimplexNoise TEMPERATURE_NOISE;
 
-    @Inject(method = "getHeightAdjustedTemperature", at = @At("RETURN"), cancellable = true)
+    // optional (require = 0): if another mod has replaced this method, the game still starts and
+    // snow just follows vanilla's rule
+    @Inject(method = "getHeightAdjustedTemperature", at = @At("RETURN"), cancellable = true, require = 0)
     private void alosearth$realAltitude(BlockPos pos, CallbackInfoReturnable<Float> cir) {
-        if (EarthClimate.active == null) return;
+        if (!EarthClimate.changes(pos.getY())) return; // most calls: low ground, nothing to change
         double noise = TEMPERATURE_NOISE.getValue(pos.getX() / 8.0, pos.getZ() / 8.0, false);
         float vanillaDrop = pos.getY() > 80 ? ((float) (noise * 8.0) + pos.getY() - 80.0F) * 0.05F / 40.0F : 0;
         cir.setReturnValue((float) (cir.getReturnValue() + vanillaDrop - EarthClimate.drop(pos.getY(), noise)));

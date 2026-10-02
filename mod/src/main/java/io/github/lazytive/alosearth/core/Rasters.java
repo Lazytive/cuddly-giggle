@@ -39,7 +39,27 @@ public final class Rasters {
         private final Map<Key, java.util.concurrent.CompletableFuture<GeoTiff.Segment>> loading =
             new java.util.concurrent.ConcurrentHashMap<>();
 
+        /** Per thread, the last few segments it used: most lookups hit these without taking the lock. */
+        private static final class Recent {
+            final GeoTiff[] tiff = new GeoTiff[16];
+            final int[] idx = new int[16];
+            final GeoTiff.Segment[] seg = new GeoTiff.Segment[16];
+        }
+
+        private final ThreadLocal<Recent> recent = ThreadLocal.withInitial(Recent::new);
+
         public GeoTiff.Segment get(GeoTiff t, int idx) {
+            Recent r = recent.get();
+            int slot = (idx * 31 + System.identityHashCode(t)) & 15;
+            if (r.tiff[slot] == t && r.idx[slot] == idx) return r.seg[slot];
+            GeoTiff.Segment s = shared(t, idx);
+            r.tiff[slot] = t;
+            r.idx[slot] = idx;
+            r.seg[slot] = s;
+            return s;
+        }
+
+        private GeoTiff.Segment shared(GeoTiff t, int idx) {
             Key k = new Key(t, idx);
             synchronized (this) {
                 GeoTiff.Segment s = map.get(k);

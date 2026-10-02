@@ -2,19 +2,23 @@ package io.github.lazytive.alosearth.core;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static io.github.lazytive.alosearth.core.Palette.*;
 
 /**
- * The world's terrain, computed in 64x64-block tiles (with a 16-block border
+ * The world's terrain, computed in 128x128-block tiles (with a 16-block border
  * of context so slopes, coasts and river banks match across tiles) and
  * cached. Everything is a pure function of the settings and input data, so
  * the same place always generates the same way.
  */
 public final class Terrain {
-    public static final int TILE = 64, BORDER = 16, N = TILE + 2 * BORDER;
+    public static final int TILE = 128, BORDER = 16, N = TILE + 2 * BORDER;
     private static final long SEED = 0x414C4F5345415254L;
-    private static final int MAX_TILES = 2048;
+    /** About 100 MB of tiles, in 16 separately locked parts so generator threads rarely wait on each other. */
+    private static final int MAX_TILES = 512, STRIPES = 16;
 
     public final EarthSettings settings;
     public final CubeProjection projection;
@@ -39,25 +43,38 @@ public final class Terrain {
     private final double radius;
     /** Size of real-world features relative to the 1:30 design scale (1 at 30 m per block, 30 at 1:1). */
     private final double scale;
-    private final Map<Long, Tile> cache = new LinkedHashMap<>(256, 0.75f, true);
+    @SuppressWarnings("unchecked")
+    private final LinkedHashMap<Long, Tile>[] cache = new LinkedHashMap[STRIPES];
+    /** Tiles being computed right now: other threads that need one wait for it instead of computing it again. */
+    private final Map<Long, CompletableFuture<Tile>> computing = new ConcurrentHashMap<>();
     /** Streams and rivers from the elevation data (worlds with the Minecraft feel), else null. */
     final Rivers rivers;
 
-    /** One 64x64 tile of columns, indexed [z * 64 + x] relative to the tile corner. */
+    /** One tile of columns, indexed [z * TILE + x] relative to the tile corner. */
     public static final class Tile {
         public final int tx, tz;
-        public final int[] top = new int[TILE * TILE];
-        public final int[] water = new int[TILE * TILE];
-        public final byte[] biome = new byte[TILE * TILE];
-        public final byte[] style = new byte[TILE * TILE];
+        public final int[] top;
+        public final int[] water;
+        public final byte[] biome;
+        public final byte[] style;
         /** Bit 0: caves may run below; bit 1: they may open at the surface; bits 4-6: overhang depth. */
-        public final byte[] feature = new byte[TILE * TILE];
+        public final byte[] feature;
         /** Biome of the caves under a column (-1: the surface biome). */
-        public final byte[] caveBiome = new byte[TILE * TILE];
+        public final byte[] caveBiome;
 
         Tile(int tx, int tz) {
+            this(tx, tz, TILE * TILE);
+        }
+
+        Tile(int tx, int tz, int cells) {
             this.tx = tx;
             this.tz = tz;
+            top = new int[cells];
+            water = new int[cells];
+            biome = new byte[cells];
+            style = new byte[cells];
+            feature = new byte[cells];
+            caveBiome = new byte[cells];
             java.util.Arrays.fill(caveBiome, (byte) -1);
         }
     }
@@ -104,6 +121,7 @@ public final class Terrain {
         double mpb = settings.metersPerBlock();
         double minArea = mpb <= 2 ? 0.6 : mpb <= 6 ? 1.5 : mpb <= 12 ? 3 : 10;
         this.rivers = settings.minecraftFeel() ? new Rivers(this::hydroElevation, minArea) : null;
+        for (int i = 0; i < STRIPES; i++) cache[i] = new LinkedHashMap<>(64, 0.75f, true);
     }
 
     /** Elevation for the flow model (metres, NaN at sea), from the same data as the terrain. */
@@ -137,29 +155,65 @@ public final class Terrain {
 
     // ------------------------------------------------------------ queries
 
+    private static long key(int tx, int tz) {
+        return ((long) tx << 32) ^ (tz & 0xffffffffL);
+    }
+
+    private LinkedHashMap<Long, Tile> stripe(long key) {
+        long h = key * 0x9E3779B97F4A7C15L;
+        return cache[(int) (h >>> 60)];
+    }
+
     public Tile tile(int tx, int tz) {
-        long key = ((long) tx << 32) ^ (tz & 0xffffffffL);
-        synchronized (cache) {
-            Tile t = cache.get(key);
+        long key = key(tx, tz);
+        LinkedHashMap<Long, Tile> part = stripe(key);
+        synchronized (part) {
+            Tile t = part.get(key);
             if (t != null) return t;
         }
-        Tile t = compute(tx, tz);
-        synchronized (cache) {
-            cache.put(key, t);
-            if (cache.size() > MAX_TILES) {
-                var it = cache.entrySet().iterator();
-                it.next();
-                it.remove();
+        CompletableFuture<Tile> mine = new CompletableFuture<>();
+        CompletableFuture<Tile> running = computing.putIfAbsent(key, mine);
+        if (running != null) {
+            try {
+                return running.join();
+            } catch (CompletionException e) {
+                if (e.getCause() instanceof RuntimeException re) throw re;
+                if (e.getCause() instanceof Error er) throw er;
+                throw e;
             }
         }
-        return t;
+        try {
+            Tile t;
+            synchronized (part) { // finished by another thread since the first look
+                t = part.get(key);
+            }
+            if (t == null) {
+                t = compute(tx, tz);
+                synchronized (part) {
+                    part.put(key, t);
+                    if (part.size() > MAX_TILES / STRIPES) {
+                        var it = part.entrySet().iterator();
+                        it.next();
+                        it.remove();
+                    }
+                }
+            }
+            mine.complete(t);
+            return t;
+        } catch (RuntimeException | Error e) {
+            mine.completeExceptionally(e);
+            throw e;
+        } finally {
+            computing.remove(key, mine);
+        }
     }
 
     /** The tile if it has already been computed, else null (never computes or downloads). */
     public Tile cachedTileAt(int x, int z) {
-        long key = ((long) Math.floorDiv(x, TILE) << 32) ^ (Math.floorDiv(z, TILE) & 0xffffffffL);
-        synchronized (cache) {
-            return cache.get(key);
+        long key = key(Math.floorDiv(x, TILE), Math.floorDiv(z, TILE));
+        LinkedHashMap<Long, Tile> part = stripe(key);
+        synchronized (part) {
+            return part.get(key);
         }
     }
 
@@ -185,6 +239,17 @@ public final class Terrain {
         Zone zone = k > 0 ? zoneForKoppen(k) : null;
         if (zone == null) zone = zoneForLatitude(Math.abs(lat));
         return Palette.biome(pickBiome(zone, px, py, pz));
+    }
+
+    /**
+     * A value from 0 to 1 that is the same across irregular patches a few hundred blocks wide
+     * (bigger in bigger worlds): for spreading several replacement biomes over one kind of land.
+     */
+    public double variety(int x, int z) {
+        double[] ll = new double[2];
+        if (projection.inverse(x + 0.5, z + 0.5, ll) == CubeProjection.OUTSIDE) return 0;
+        double[] v = CubeProjection.lonLatToVec(ll[0], ll[1]);
+        return patch(v[0] * radius + 3.0e5, v[1] * radius, v[2] * radius, 400 * Math.min(3, Math.sqrt(scale)));
     }
 
     public Tile tileAt(int x, int z) {
@@ -312,8 +377,14 @@ public final class Terrain {
         double best = Double.MAX_VALUE;
         int bestHash = 0;
         for (int dx = -1; dx <= 1; dx++) {
+            double bx = boxGap(cx + dx, cell, wx);
+            if (bx >= best) continue;
             for (int dy = -1; dy <= 1; dy++) {
+                double bxy = bx + boxGap(cy + dy, cell, wy);
+                if (bxy >= best) continue;
                 for (int dz = -1; dz <= 1; dz++) {
+                    // the cell's point can't be nearer than the cell itself: skip it (same result, less work)
+                    if (bxy + boxGap(cz + dz, cell, wz) >= best) continue;
                     int h = hash(cx + dx, cy + dy, cz + dz);
                     double jx = (cx + dx + ((h & 1023) / 1024.0)) * cell - wx;
                     double jy = (cy + dy + (((h >>> 10) & 1023) / 1024.0)) * cell - wy;
@@ -327,6 +398,13 @@ public final class Terrain {
             }
         }
         return (hash(bestHash, 7, 13) >>> 8) / (double) (1 << 24);
+    }
+
+    /** Squared distance along one axis from {@code w} to the cell [c, c + 1) * cell (0 inside it). */
+    private static double boxGap(int c, double cell, double w) {
+        double lo = c * cell - w, hi = (c + 1) * cell - w;
+        double g = lo > 0 ? lo : hi < 0 ? hi : 0;
+        return g * g;
     }
 
     private static Zone zoneForKoppen(int k) {
@@ -392,6 +470,91 @@ public final class Terrain {
         return d;
     }
 
+    /** The inputs for one column (centre at block coordinates bx, bz): place, elevation, depth, land class, climate. */
+    private void sample(double bx, double bz, int i, boolean fine, double[] lat, double[] lonA, double[] elev, double[] depth,
+                        double[] px, double[] py, double[] pz, byte[] cls, boolean[] valid, Zone[] zone,
+                        double[] ll, double[] smp, double[] flatLevel) {
+        final EarthSettings s = settings;
+        depth[i] = Double.NaN;
+        cls[i] = Rasters.CLS_SEA;
+        if (projection.inverse(bx, bz, ll) == CubeProjection.OUTSIDE) {
+            elev[i] = Double.NaN;
+            return;
+        }
+        valid[i] = true;
+        double lon = ll[0], la = ll[1];
+        lat[i] = la;
+        lonA[i] = lon;
+        double[] v = CubeProjection.lonLatToVec(lon, la);
+        px[i] = v[0] * radius;
+        py[i] = v[1] * radius;
+        pz[i] = v[2] * radius;
+
+        double e = Double.NaN, b = Double.NaN;
+        int c = Rasters.CLS_SEA;
+        // Data problems (a corrupt file, a network error) must never break
+        // world generation: that column just falls through to the next source.
+        try {
+            data.aw3d30.sample(lon, la, smp, fine);
+            e = smp[0];
+            c = (int) smp[1];
+        } catch (RuntimeException ex) {
+            dataError(ex);
+        }
+        if (Double.isNaN(e) && !data.fillDem.isEmpty()) {
+            try {
+                e = data.fillDem.sample(lon, la, fine);
+                if (!Double.isNaN(e)) {
+                    c = data.fillDem.demClass(lon, la, flatLevel);
+                    if (c == Rasters.CLS_LAKE) e = flatLevel[0];
+                    else if (c == Rasters.CLS_UNKNOWN) c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
+                }
+            } catch (RuntimeException ex) {
+                dataError(ex);
+            }
+        }
+        if (Double.isNaN(e) && data.autoDem != null) {
+            try {
+                e = data.autoDem.sample(lon, la, fine);
+                if (!Double.isNaN(e)) {
+                    c = data.autoDem.demClass(lon, la, flatLevel);
+                    if (c == Rasters.CLS_LAKE) e = flatLevel[0];
+                    else if (c == Rasters.CLS_UNKNOWN) c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
+                }
+            } catch (RuntimeException ex) {
+                dataError(ex);
+            }
+        }
+        // depth data for the sea, and (in worlds with the downloaded sea floor) for lake beds
+        boolean wantDepth = Double.isNaN(e) || c == Rasters.CLS_SEA || (c == Rasters.CLS_LAKE && s.seaFloor());
+        if (wantDepth && !data.bathymetry.isEmpty()) {
+            try {
+                b = data.bathymetry.sample(lon, la, fine);
+            } catch (RuntimeException ex) {
+                dataError(ex);
+            }
+        } else if (wantDepth && s.seaFloor() && data.seaFloor != null) {
+            try {
+                b = data.seaFloor.sample(lon, la, fine);
+            } catch (RuntimeException ex) {
+                dataError(ex);
+            }
+        }
+        if (Double.isNaN(e) && !Double.isNaN(b)) {
+            e = b;
+            c = b < 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
+        }
+        if (Double.isNaN(e)) c = Rasters.CLS_SEA;
+        if (c == Rasters.CLS_SEA && !Double.isNaN(b)) depth[i] = Math.max(0, -b);
+        if (c == Rasters.CLS_LAKE && !Double.isNaN(b) && b < e - 3) depth[i] = b; // lake bed elevation
+        elev[i] = e;
+        cls[i] = (byte) c;
+
+        int kc = climateClass(lon, la, px[i], py[i], pz[i]);
+        Zone zn = kc > 0 ? zoneForKoppen(kc) : null;
+        zone[i] = zn != null ? zn : zoneForLatitude(Math.abs(la));
+    }
+
     Tile compute(int tx, int tz) {
         final int n = N, nn = n * n;
         final EarthSettings s = settings;
@@ -409,84 +572,7 @@ public final class Terrain {
 
         for (int i = 0; i < nn; i++) {
             int x = x0 + i % n, z = z0 + i / n;
-            depth[i] = Double.NaN;
-            cls[i] = Rasters.CLS_SEA;
-            if (projection.inverse(x + 0.5, z + 0.5, ll) == CubeProjection.OUTSIDE) {
-                elev[i] = Double.NaN;
-                continue;
-            }
-            valid[i] = true;
-            double lon = ll[0], la = ll[1];
-            lat[i] = la;
-            lonA[i] = lon;
-            double[] v = CubeProjection.lonLatToVec(lon, la);
-            px[i] = v[0] * radius;
-            py[i] = v[1] * radius;
-            pz[i] = v[2] * radius;
-
-            double e = Double.NaN, b = Double.NaN;
-            int c = Rasters.CLS_SEA;
-            // Data problems (a corrupt file, a network error) must never break
-            // world generation: that column just falls through to the next source.
-            try {
-                data.aw3d30.sample(lon, la, smp, fine);
-                e = smp[0];
-                c = (int) smp[1];
-            } catch (RuntimeException ex) {
-                dataError(ex);
-            }
-            if (Double.isNaN(e) && !data.fillDem.isEmpty()) {
-                try {
-                    e = data.fillDem.sample(lon, la, fine);
-                    if (!Double.isNaN(e)) {
-                        c = data.fillDem.demClass(lon, la, flatLevel);
-                        if (c == Rasters.CLS_LAKE) e = flatLevel[0];
-                        else if (c == Rasters.CLS_UNKNOWN) c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
-                    }
-                } catch (RuntimeException ex) {
-                    dataError(ex);
-                }
-            }
-            if (Double.isNaN(e) && data.autoDem != null) {
-                try {
-                    e = data.autoDem.sample(lon, la, fine);
-                    if (!Double.isNaN(e)) {
-                        c = data.autoDem.demClass(lon, la, flatLevel);
-                        if (c == Rasters.CLS_LAKE) e = flatLevel[0];
-                        else if (c == Rasters.CLS_UNKNOWN) c = e <= 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
-                    }
-                } catch (RuntimeException ex) {
-                    dataError(ex);
-                }
-            }
-            // depth data for the sea, and (in worlds with the downloaded sea floor) for lake beds
-            boolean wantDepth = Double.isNaN(e) || c == Rasters.CLS_SEA || (c == Rasters.CLS_LAKE && s.seaFloor());
-            if (wantDepth && !data.bathymetry.isEmpty()) {
-                try {
-                    b = data.bathymetry.sample(lon, la, fine);
-                } catch (RuntimeException ex) {
-                    dataError(ex);
-                }
-            } else if (wantDepth && s.seaFloor() && data.seaFloor != null) {
-                try {
-                    b = data.seaFloor.sample(lon, la, fine);
-                } catch (RuntimeException ex) {
-                    dataError(ex);
-                }
-            }
-            if (Double.isNaN(e) && !Double.isNaN(b)) {
-                e = b;
-                c = b < 0 ? Rasters.CLS_SEA : Rasters.CLS_LAND;
-            }
-            if (Double.isNaN(e)) c = Rasters.CLS_SEA;
-            if (c == Rasters.CLS_SEA && !Double.isNaN(b)) depth[i] = Math.max(0, -b);
-            if (c == Rasters.CLS_LAKE && !Double.isNaN(b) && b < e - 3) depth[i] = b; // lake bed elevation
-            elev[i] = e;
-            cls[i] = (byte) c;
-
-            int kc = climateClass(lon, la, px[i], py[i], pz[i]);
-            Zone zn = kc > 0 ? zoneForKoppen(kc) : null;
-            zone[i] = zn != null ? zn : zoneForLatitude(Math.abs(la));
+            sample(x + 0.5, z + 0.5, i, fine, lat, lonA, elev, depth, px, py, pz, cls, valid, zone, ll, smp, flatLevel);
         }
 
         boolean[] isSea = new boolean[nn], isLake = new boolean[nn], isLand = new boolean[nn];
@@ -498,22 +584,7 @@ public final class Terrain {
 
         // --- land heights: exaggeration curve + Minecraft-style detail
         double[] base = new double[nn], h = new double[nn];
-        for (int i = 0; i < nn; i++) {
-            if (!valid[i] || isSea[i]) continue;
-            base[i] = s.landBlocks(elev[i]);
-            if (isLake[i]) {
-                h[i] = base[i];
-                continue;
-            }
-            double bumps = detailNoise.fbm(px[i], py[i], pz[i], 40, 3) * 2.2;
-            double coastFade = Math.max(0, Math.min(1, base[i] / 6));
-            double mountain = smoothstep(s.landBlocks(1000), s.landBlocks(3500), base[i]);
-            double ridged = 1 - Math.abs(ridgeNoise.fbm(px[i], py[i], pz[i], 150, 2)) * 2.2;
-            double d = bumps * coastFade * (1 + 1.5 * mountain) + ridged * 14 * mountain;
-            // 1:1: a data pixel spans ~30 blocks, so add texture below that size
-            if (fine) d += detailNoise.fbm(px[i] + 3000, py[i], pz[i], 9, 2) * coastFade * (0.6 + 2.5 * mountain);
-            h[i] = base[i] + s.detail() * d;
-        }
+        for (int i = 0; i < nn; i++) landHeight(i, valid, isSea, isLake, elev, px, py, pz, fine, base, h);
 
         if (mc) shapeLand(valid, isLand, elev, zone, base, h, px, py, pz);
 
@@ -609,6 +680,111 @@ public final class Terrain {
                 t.feature[o] = feat[i];
                 classify(t, o, i, valid[i], isSea[i], lake2[i] || river[i], zone[i], lat[i], lonA[i], base[i], h[i], slope,
                     distSea[i], sea - top[i], px[i], py[i], pz[i], boulder[i]);
+            }
+        }
+        return t;
+    }
+
+    /** Land height above sea level (blocks): the exaggeration curve plus Minecraft-style detail. */
+    private void landHeight(int i, boolean[] valid, boolean[] isSea, boolean[] isLake, double[] elev, double[] px, double[] py,
+                            double[] pz, boolean fine, double[] base, double[] h) {
+        final EarthSettings s = settings;
+        if (!valid[i] || isSea[i]) return;
+        base[i] = s.landBlocks(elev[i]);
+        if (isLake[i]) {
+            h[i] = base[i];
+            return;
+        }
+        double bumps = detailNoise.fbm(px[i], py[i], pz[i], 40, 3) * 2.2;
+        double coastFade = Math.max(0, Math.min(1, base[i] / 6));
+        double mountain = smoothstep(s.landBlocks(1000), s.landBlocks(3500), base[i]);
+        double ridged = 1 - Math.abs(ridgeNoise.fbm(px[i], py[i], pz[i], 150, 2)) * 2.2;
+        double d = bumps * coastFade * (1 + 1.5 * mountain) + ridged * 14 * mountain;
+        // 1:1: a data pixel spans ~30 blocks, so add texture below that size
+        if (fine) d += detailNoise.fbm(px[i] + 3000, py[i], pz[i], 9, 2) * coastFade * (0.6 + 2.5 * mountain);
+        h[i] = base[i] + s.detail() * d;
+    }
+
+    /**
+     * Far-away terrain, cheaply: a {@code w} x {@code w} grid of columns {@code step} blocks apart
+     * (each sampled at the centre of its {@code step} x {@code step} square, starting at x0, z0),
+     * indexed [z * w + x]. Heights, sea depths, lakes, climate, biomes and surface blocks come from
+     * the same rules as {@link #tile}; what only matters up close is left out (rivers, terraces,
+     * dunes, caves, boulders, beaches narrower than a column). For distant views (Distant Horizons).
+     */
+    public Tile far(int x0, int z0, int step, int w) {
+        final int n = w + 2, nn = n * n; // one column of context on each side
+        final EarthSettings s = settings;
+        final int sea = s.seaLevel();
+        double[] lat = new double[nn], lonA = new double[nn], elev = new double[nn], depth = new double[nn];
+        double[] px = new double[nn], py = new double[nn], pz = new double[nn];
+        byte[] cls = new byte[nn];
+        boolean[] valid = new boolean[nn];
+        Zone[] zone = new Zone[nn];
+        double[] ll = new double[2], smp = new double[2], flatLevel = new double[1];
+        double half = step / 2.0;
+        for (int i = 0; i < nn; i++) {
+            double bx = x0 + (i % n - 1) * (double) step + half, bz = z0 + (i / n - 1) * (double) step + half;
+            sample(bx, bz, i, false, lat, lonA, elev, depth, px, py, pz, cls, valid, zone, ll, smp, flatLevel);
+        }
+        boolean[] isSea = new boolean[nn], isLake = new boolean[nn], isLand = new boolean[nn];
+        for (int i = 0; i < nn; i++) {
+            isSea[i] = cls[i] == Rasters.CLS_SEA;
+            isLake[i] = cls[i] == Rasters.CLS_LAKE;
+            isLand[i] = !isSea[i] && !isLake[i];
+        }
+        double[] base = new double[nn], h = new double[nn];
+        for (int i = 0; i < nn; i++) landHeight(i, valid, isSea, isLake, elev, px, py, pz, false, base, h);
+
+        int[] top = new int[nn], water = new int[nn];
+        int minTop = s.bottomY() + 6, maxTop = s.maxY() - 1;
+        double coast = Math.min(1, step / (double) BORDER); // distance to the coast, as a share of BORDER, next to it
+        for (int i = 0; i < nn; i++) {
+            int ix = i % n, iz = i / n;
+            boolean nearLand = false;
+            for (int dz = -1; dz <= 1 && !nearLand; dz++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    int jx = ix + dx, jz = iz + dz;
+                    if (jx >= 0 && jz >= 0 && jx < n && jz < n && !isSea[jz * n + jx]) {
+                        nearLand = true;
+                        break;
+                    }
+                }
+            }
+            water[i] = Integer.MIN_VALUE;
+            if (isSea[i]) {
+                double dl = nearLand ? coast : 1;
+                double d = !Double.isNaN(depth[i]) ? s.oceanBlocks(depth[i]) : 3 + 27 * smoothstep(0, 1, dl);
+                if (dl < 1) d = Math.min(d, 2 + dl * dl * 200);
+                d = Math.max(2, d);
+                top[i] = sea - (int) Math.round(d);
+                water[i] = sea;
+            } else if (isLake[i]) {
+                water[i] = sea + (int) Math.round(base[i]);
+                top[i] = water[i] - 3;
+                if (!Double.isNaN(depth[i])) top[i] = Math.min(top[i], sea + (int) Math.round(s.landBlocks(depth[i])));
+            } else {
+                top[i] = sea + (int) Math.round(h[i]);
+            }
+            top[i] = Math.max(minTop, Math.min(maxTop, top[i]));
+        }
+
+        Tile t = new Tile(Integer.MIN_VALUE, Integer.MIN_VALUE, w * w);
+        for (int zz = 0; zz < w; zz++) {
+            for (int xx = 0; xx < w; xx++) {
+                int i = (zz + 1) * n + (xx + 1), o = zz * w + xx;
+                int surf = Math.max(top[i], water[i]), rise = 0;
+                boolean seaNext = false;
+                for (int j : new int[] {i - 1, i + 1, i - n, i + n}) {
+                    rise = Math.max(rise, Math.abs(surf - Math.max(top[j], water[j])));
+                    seaNext |= isSea[j];
+                }
+                int slope = (int) Math.round(rise / (double) step); // blocks of height per block, like the full terrain
+                float distSea = isSea[i] ? 0 : seaNext ? (float) half : BORDER + 1;
+                t.top[o] = top[i];
+                t.water[o] = water[i];
+                classify(t, o, i, valid[i], isSea[i], isLake[i], zone[i], lat[i], lonA[i], base[i], h[i], slope,
+                    distSea, sea - top[i], px[i], py[i], pz[i], false);
             }
         }
         return t;

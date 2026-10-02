@@ -157,6 +157,10 @@ public final class EarthChunkGenerator extends ChunkGenerator {
             minWater = Math.min(minWater, tile.water[i] + offset);
         }
         int bedrockTop = t.settings.bottomY() + offset + 5;
+        boolean[] floorBlock = floorBlocks();
+        int[] surfTop = new int[256], floorTop = new int[256], surfId = new int[256], floorId = new int[256];
+        java.util.Arrays.fill(surfId, -1);
+        java.util.Arrays.fill(floorId, -1);
         LevelChunkSection[] sections = chunk.getSections();
         BlockState lastUniform = null;
         int lastUniformTop = 0;
@@ -187,19 +191,39 @@ public final class EarthChunkGenerator extends ChunkGenerator {
                 for (int y = y0; y <= hi; y++) {
                     int id = t.block(tile, i, x, y - offset, z);
                     if (id == Palette.AIR) continue;
-                    BlockState state = st[id];
-                    section.setBlockState(lx, y & 15, lz, state, false);
-                    oceanFloor.update(lx, y, lz, state);
-                    worldSurface.update(lx, y, lz, state);
+                    section.setBlockState(lx, y & 15, lz, st[id], false);
+                    surfTop[c] = y; // blocks go in bottom to top, so the last one is the highest
+                    surfId[c] = id;
+                    if (floorBlock[id]) {
+                        floorTop[c] = y;
+                        floorId[c] = id;
+                    }
                 }
             }
         }
-        if (lastUniform != null) { // heightmaps only ever rise, so the highest uniform section is enough
-            for (int c = 0; c < 256; c++) {
+        // heightmaps only ever rise: the highest block of each kind per column is enough
+        for (int c = 0; c < 256; c++) {
+            if (lastUniform != null) {
                 oceanFloor.update(c & 15, lastUniformTop, c >> 4, lastUniform);
                 worldSurface.update(c & 15, lastUniformTop, c >> 4, lastUniform);
             }
+            if (floorId[c] >= 0) oceanFloor.update(c & 15, floorTop[c], c >> 4, st[floorId[c]]);
+            if (surfId[c] >= 0) worldSurface.update(c & 15, surfTop[c], c >> 4, st[surfId[c]]);
         }
+    }
+
+    private volatile boolean[] floorBlocks;
+
+    /** For each palette block, whether it counts for the ocean-floor heightmap (blocks movement). */
+    private boolean[] floorBlocks() {
+        boolean[] f = floorBlocks;
+        if (f == null) {
+            BlockState[] st = states();
+            f = new boolean[st.length];
+            for (int i = 0; i < st.length; i++) f[i] = Heightmap.Types.OCEAN_FLOOR_WG.isOpaque().test(st[i]);
+            floorBlocks = f;
+        }
+        return f;
     }
 
     /**
@@ -260,8 +284,8 @@ public final class EarthChunkGenerator extends ChunkGenerator {
         // around this chunk first, so these checks see the real rivers, coasts and mountains.
         Terrain t = terrain();
         int x0 = chunk.getPos().getMinBlockX(), z0 = chunk.getPos().getMinBlockZ();
-        for (int dz = -Terrain.TILE / 2; dz <= 16 + Terrain.TILE / 2; dz += Terrain.TILE / 2) {
-            for (int dx = -Terrain.TILE / 2; dx <= 16 + Terrain.TILE / 2; dx += Terrain.TILE / 2) t.tileAt(x0 + dx, z0 + dz);
+        for (int tz = Math.floorDiv(z0 - 32, Terrain.TILE); tz <= Math.floorDiv(z0 + 48, Terrain.TILE); tz++) {
+            for (int tx = Math.floorDiv(x0 - 32, Terrain.TILE); tx <= Math.floorDiv(x0 + 48, Terrain.TILE); tx++) t.tile(tx, tz);
         }
         super.createStructures(registryAccess, structureState, structureManager, chunk, templateManager);
         if (chunk.getAllStarts().isEmpty()) return;

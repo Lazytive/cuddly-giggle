@@ -61,9 +61,29 @@ public final class Rivers {
         return best;
     }
 
+    /** Per thread, the regions it used last: nearly every lookup hits these without taking the lock. */
+    private static final class Recent {
+        final long[] key = new long[8];
+        final Region[] region = new Region[8];
+    }
+
+    private final ThreadLocal<Recent> recent = ThreadLocal.withInitial(Recent::new);
+
     private Region region(int rx, int ry) {
         if (ry * CORE >= 84 || ry * CORE < -84) return null; // no rivers near the poles (ice)
         long key = ((long) rx << 32) ^ (ry & 0xffffffffL);
+        Recent mem = recent.get();
+        int slot = (rx * 3 + ry * 5) & 7;
+        if (mem.region[slot] != null && mem.key[slot] == key) return mem.region[slot];
+        Region r = sharedRegion(rx, ry, key);
+        if (r != null) {
+            mem.key[slot] = key;
+            mem.region[slot] = r;
+        }
+        return r;
+    }
+
+    private Region sharedRegion(int rx, int ry, long key) {
         CompletableFuture<Region> f, mine = null;
         synchronized (regions) {
             f = regions.get(key);

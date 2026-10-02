@@ -346,6 +346,34 @@ final class TerrainTests {
             });
         }
 
+        run("far terrain (for distant views) matches the full terrain", () -> {
+            for (EarthSettings s : new EarthSettings[] {EarthSettings.DEFAULT, EarthSettings.MINECRAFT_LIKE}) {
+                Terrain t = new Terrain(s, sources(data));
+                double[] p = new double[2];
+                t.projection.forward(139.5, 35.5, p);
+                for (int step : new int[] {1, 4, 16}) {
+                    int w = 64, x0 = (int) p[0] - w * step / 2, z0 = (int) p[1] - w * step / 2;
+                    Terrain.Tile f = t.far(x0, z0, step, w);
+                    double diff = 0;
+                    int sameBiome = 0, sameWet = 0, n = w * w;
+                    for (int z = 0; z < w; z++) {
+                        for (int x = 0; x < w; x++) {
+                            int bx = x0 + x * step + step / 2, bz = z0 + z * step + step / 2, o = z * w + x;
+                            Terrain.Tile full = t.tileAt(bx, bz);
+                            int i = Terrain.index(bx, bz);
+                            diff += Math.abs(Math.max(f.top[o], f.water[o]) - Math.max(full.top[i], full.water[i]));
+                            if (f.biome[o] == full.biome[i]) sameBiome++;
+                            if ((f.water[o] > f.top[o]) == (full.water[i] > full.top[i])) sameWet++;
+                        }
+                    }
+                    String where = (s.minecraftFeel() ? "Minecraft feel" : "default") + ", every " + step + " blocks";
+                    check(diff / n < 1, where + ": surface off by " + diff / n + " blocks on average");
+                    check(sameWet > n * 0.97, where + ": water in the wrong places " + (n - sameWet) + "/" + n);
+                    check(sameBiome > n * 0.9, where + ": biome differs in " + (n - sameBiome) + "/" + n);
+                }
+            }
+        });
+
         run("tile speed", () -> {
             Terrain t = new Terrain(EarthSettings.DEFAULT, sources(data));
             double[] p = new double[2];
@@ -355,8 +383,9 @@ final class TerrainTests {
             long t0 = System.nanoTime();
             for (int i = 1; i <= 20; i++) t.compute(tx + i, tz);
             double ms = (System.nanoTime() - t0) / 1e6 / 20;
-            System.out.printf("     %.1f ms per 64x64 tile (%.2f ms per chunk)%n", ms, ms / 16);
-            check(ms < 200, "too slow: " + ms + " ms per tile");
+            int chunks = Terrain.TILE * Terrain.TILE / 256;
+            System.out.printf("     %.1f ms per %dx%d tile (%.2f ms per chunk)%n", ms, Terrain.TILE, Terrain.TILE, ms / chunks);
+            check(ms / chunks < 12, "too slow: " + ms + " ms per tile");
         });
     }
 }

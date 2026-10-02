@@ -332,6 +332,29 @@ final class SelfTest {
             else notes.add("Immersive Portals: seam portals match all " + gen.terrain().projection.links.length + " seams");
         }
 
+        // 9. biomes from other mods (config "biomes"): replacements are placed, shared in patches,
+        // and unknown ids are skipped
+        {
+            var lookup = level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.BIOME);
+            EarthBiomeSource src = new EarthBiomeSource(lookup, t.settings, java.util.Map.of(
+                "plains", List.of("minecraft:meadow", "minecraft:cherry_grove", "nosuchmod:nosuchbiome")));
+            int plains = Palette.biome("plains"), meadow = 0, cherry = 0;
+            double[] at = new double[2];
+            t.projection.forward(139.5, 35.5, at);
+            for (int k = 0; k < 400; k++) { // 20 x 20 spots 1500 blocks apart
+                int x = (int) at[0] + (k % 20) * 1500, z = (int) at[1] + (k / 20) * 1500;
+                String got = src.biomeAt(plains, x, z).unwrapKey().map(key -> key.location().getPath()).orElse("?");
+                if (got.equals("meadow")) meadow++;
+                else if (got.equals("cherry_grove")) cherry++;
+            }
+            boolean listed = src.possibleBiomes().stream().anyMatch(h -> h.is(net.minecraft.world.level.biome.Biomes.MEADOW));
+            notes.add("biome replacements: plains became meadow " + meadow + "x and cherry grove " + cherry + "x of 400");
+            if (meadow + cherry != 400 || meadow < 40 || cherry < 40 || !listed) errors.add("biome replacements from the config");
+            if (src.biomeAt(Palette.biome("forest"), 0, 0).unwrapKey().map(key -> !key.location().getPath().equals("forest")).orElse(true)) {
+                errors.add("a biome without a replacement changed");
+            }
+        }
+
         // 8. with Distant Horizons: the LOD columns it gets from the terrain model pass its own checks
         if (AlosEarth.DISTANT_HORIZONS) {
             String problem = io.github.lazytive.alosearth.compat.DistantHorizonsEarth.check(level, gen, notes);

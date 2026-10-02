@@ -27,6 +27,12 @@ public final class EarthConfig {
     public String auto_download_dir = "alosearth-data/auto";
     /** With Immersive Portals installed: see-through portals on the globe's seams. */
     public boolean seamless_edges = true;
+    /**
+     * Biomes from other mods: each ALOS Earth biome (vanilla name, e.g. "forest") can be replaced by
+     * one or more biome ids, e.g. {"forest": ["terralith:forested_highlands", "minecraft:forest"]}.
+     * Several share the land in patches. Ids of mods that aren't installed are skipped.
+     */
+    public java.util.Map<String, List<String>> biomes = new java.util.LinkedHashMap<>();
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
