@@ -128,8 +128,13 @@ jobs:
           url=$(curl -sSf "https://api.modrinth.com/v2/version/$ORG_GRADLE_PROJECT_distant_horizons_version" \
             | python3 -c "import json,sys; v=json.load(sys.stdin); f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url']); print(v['version_number'], file=sys.stderr)")
           curl -sSfL -o run/mods/distanthorizons.jar "$url"
+          # far terrain saved by an older ALOS Earth (no version mark) must be cleared before Distant Horizons opens it
+          mkdir -p run/world/data
+          echo "stale" > run/world/data/DistantHorizons.sqlite
           sh scripts/ci-run-server.sh
           grep -iE "distant ?horizons|exception|error" run/logs/latest.log | grep -v "SQL update" | head -60 || true
+          grep -q "far terrain saved for the overworld was cleared" run/logs/latest.log
+          grep -qx 2 run/world/data/alosearth-far-terrain.txt
           cat run/alosearth-selftest.txt
           grep -q "LOD chunks .* pass its checks" run/alosearth-selftest.txt
           grep -q "far terrain at any detail" run/alosearth-selftest.txt

@@ -220,6 +220,51 @@ public final class DistantHorizonsEarth {
     }
 
     /**
+     * Version of the far terrain ALOS Earth gives Distant Horizons: raise it whenever that changes
+     * (1: ground and a flat leaf canopy; 2: the real trees and plants), so far terrain that Distant
+     * Horizons saved with an older version is rebuilt instead of kept forever.
+     */
+    static final int FAR_TERRAIN_VERSION = 2;
+
+    /**
+     * Before the levels load (so before Distant Horizons opens its database): if this ALOS Earth
+     * world's saved far terrain was made by an older version (or isn't marked at all), it is
+     * deleted, and Distant Horizons builds it again as the player looks around.
+     */
+    public static void resetOutdated(net.minecraft.server.MinecraftServer server) {
+        var stem = server.registryAccess().registryOrThrow(Registries.LEVEL_STEM)
+            .get(net.minecraft.world.level.dimension.LevelStem.OVERWORLD);
+        if (stem == null || !(stem.generator() instanceof EarthChunkGenerator)) return;
+        java.nio.file.Path data = server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("data");
+        java.nio.file.Path mark = data.resolve("alosearth-far-terrain.txt");
+        String want = String.valueOf(FAR_TERRAIN_VERSION);
+        try {
+            String have = java.nio.file.Files.exists(mark) ? java.nio.file.Files.readString(mark).trim() : "";
+            if (want.equals(have)) return;
+            int deleted = 0;
+            if (java.nio.file.Files.isDirectory(data)) {
+                try (var files = java.nio.file.Files.list(data)) {
+                    for (java.nio.file.Path f : (Iterable<java.nio.file.Path>) files::iterator) {
+                        if (f.getFileName().toString().startsWith("DistantHorizons.sqlite")) {
+                            java.nio.file.Files.delete(f);
+                            deleted++;
+                        }
+                    }
+                }
+            }
+            java.nio.file.Files.createDirectories(data);
+            java.nio.file.Files.writeString(mark, want);
+            if (deleted > 0) {
+                AlosEarth.LOG.info("Distant Horizons: this ALOS Earth version draws far terrain differently, so the far terrain"
+                    + " saved for the overworld was cleared; Distant Horizons is building it again");
+            }
+        } catch (java.io.IOException | RuntimeException e) {
+            AlosEarth.LOG.warn("Distant Horizons: couldn't clear the outdated far terrain ({}); it stays until Distant Horizons"
+                + " rebuilds it", e.toString());
+        }
+    }
+
+    /**
      * Once the server has started (every mod has had its say): which far-terrain generator each ALOS
      * Earth level ended up with, in the log, so a clash with another Distant Horizons add-on shows.
      */

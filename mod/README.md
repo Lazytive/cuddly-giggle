@@ -302,6 +302,12 @@ column (one point per 2, 4, … 4096 blocks) instead of block by block, so far
 terrain fills in many times faster; nearby LODs still match the world
 exactly. Chunks you have actually visited still use their real blocks.
 
+**After updating ALOS Earth,** far terrain that Distant Horizons saved with
+an older version is cleared once when the world loads (the log says so), and
+Distant Horizons builds it again as you look around. On someone else's
+server, your own Distant Horizons cache may still hold old far terrain:
+clear it in Distant Horizons' settings if you see it.
+
 **Other Distant Horizons generators (DH SeedGen and the like).** These
 rebuild vanilla terrain from the world seed, so in an ALOS Earth world they
 would show hills that don't exist (which then change when you walk up to

@@ -12,6 +12,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
+import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
@@ -33,6 +34,7 @@ public final class AlosEarthNeoForge {
         NeoForge.EVENT_BUS.addListener((LevelEvent.Load e) -> {
             if (e.getLevel() instanceof ServerLevel level) AlosEarth.levelLoaded(level);
         });
+        NeoForge.EVENT_BUS.addListener((ServerAboutToStartEvent e) -> AlosEarth.serverStarting(e.getServer()));
         NeoForge.EVENT_BUS.addListener((ServerStartedEvent e) -> AlosEarth.serverStarted(e.getServer()));
         NeoForge.EVENT_BUS.addListener((ServerStoppedEvent e) -> AlosEarth.serverStopped());
         if (dist.isClient()) AlosEarthNeoForgeClient.init(modBus);

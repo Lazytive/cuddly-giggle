@@ -68,6 +68,17 @@ public final class AlosEarth {
         }
     }
 
+    /** When the server is about to start, before its levels load. */
+    public static void serverStarting(MinecraftServer server) {
+        if (DISTANT_HORIZONS) {
+            try {
+                io.github.lazytive.alosearth.compat.DistantHorizonsEarth.resetOutdated(server);
+            } catch (Throwable e) {
+                LOG.warn("Distant Horizons integration unavailable: {}", e.toString());
+            }
+        }
+    }
+
     public static void serverStarted(MinecraftServer server) {
         if (IMMERSIVE_PORTALS && seamPortals != null) {
             try {

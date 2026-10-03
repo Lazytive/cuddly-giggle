@@ -27,6 +27,7 @@ public final class AlosEarthFabric implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registries, environment) -> EarthCommands.register(dispatcher));
         ServerWorldEvents.LOAD.register((server, level) -> AlosEarth.levelLoaded(level));
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> AlosEarth.serverStopped());
+        ServerLifecycleEvents.SERVER_STARTING.register(AlosEarth::serverStarting);
         ServerLifecycleEvents.SERVER_STARTED.register(AlosEarth::serverStarted);
     }
 }
