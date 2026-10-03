@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alos2mc"
+version = "0.1.0"
+description = "Build a 1:30 scale Minecraft Java world of the whole Earth from JAXA ALOS AW3D30 elevation data"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.23", "tifffile>=2023.1", "imagecodecs>=2023.1"]
+
+[project.optional-dependencies]
+test = ["pytest", "nbtlib"]
+
+[project.scripts]
+alos2mc = "alos2mc.cli:main"
+
+[tool.setuptools]
+packages = ["alos2mc"]

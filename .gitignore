@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+# generated worlds and downloaded data
+/worlds/
+/data/
+*.mca
+# mod build output and dev server
+mod/build/
+mod/.gradle/
+mod/neoforge/.gradle/
+mod/run/

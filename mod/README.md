@@ -1,0 +1,398 @@
+# ALOS Earth (NeoForge mod, beta)
+
+A **world type** that generates the whole Earth at about **1 block ≈ 30 m**
+(or **1:1**, see below), on the fly, from JAXA's ALOS AW3D30 elevation data. The world is a **globe**:
+walk or fly in any direction, across the poles or around the planet, and you
+arrive where you would on the real Earth.
+
+* **Terrain:** land is "Minecraft‑like" rather than strictly to scale.
+  * Lowland relief is exaggerated about 3×.
+  * Mountains are compressed so Everest peaks near **y 600**.
+  * Minecraft‑style bumps and ridges are added on top of the real shape.
+  * The world runs from y −128 to 640; sea level is 63.
+* **Biomes:**
+  * Climate zones (from a Köppen map, or by latitude) are mixed with natural
+    variety in patches.
+  * Mountains get meadows, groves, snowy slopes and peaks.
+  * Coasts get beaches, stony shores, swamps and mangroves.
+  * Rivers are widened to boat size.
+* **Underground:** mostly solid rock with rare winding caves (see below).
+  Ores, trees, plants, villages and other structures, and mobs are all
+  vanilla.
+
+### Minecraft feel (worlds made with beta.21 or later)
+
+Real terrain is smooth and gentle, so new worlds add Minecraft‑style
+character on top of the real shape. It's in every world type:
+* **Rivers and streams:**
+  * Channels are worked out from the elevation data: which way water flows
+    and how much land drains through each point, down every valley.
+  * They widen as they collect water and have banks sloping down to them.
+  * They start below the snow line.
+* **Cliffs and ledges:** steep slopes step down in flat ledges and short
+  cliffs, and cliff edges sometimes overhang.
+* **Rocks:** boulders (mossy in damp climates), andesite outcrops on
+  hillsides, and dunes in sandy deserts.
+* **Ground patches:** coarse dirt, moss, podzol and gravel, so the ground
+  varies instead of being one block for kilometres.
+* **More biomes:**
+  * cherry groves in the hills of Japan, Korea and Taiwan;
+  * mushroom fields on a few remote islands: Pitcairn, Tristan da Cunha,
+    Saint Helena, Ascension, Clipperton and Easter Island;
+  * meadows, groves, eroded badlands, windswept savanna and old growth
+    birch forest.
+* **Caves:** rare spaghetti tunnels within 64 blocks of the surface, away
+  from water, occasionally opening at the surface. Lush caves lie under
+  jungles and swamps, dripstone caves under dry land and mountains.
+* **Snow by real altitude:** Minecraft normally cools every biome above y 80
+  whatever the scale. Here it gets colder with real height above 1,000 m,
+  so plains get snow from about 3 km up, taiga from about 1.3 km. The
+  snow line and tree line follow the real ones (the Alps: snow line about
+  2,900 m, tree line about 2,000 m).
+* **Through the Earth:** there is no bedrock at the bottom of the world.
+  Dig or fall out of the bottom (the lowest deep layer in 1:1 worlds) and
+  you come out at the opposite point of the globe (latitude flipped,
+  longitude plus 180°). You burst out of a small hole and get thrown up and
+  forward, the way you were facing, so you land clear of it, with a few
+  seconds of slow falling. Mobs and items go through too.
+  Most land is opposite ocean, so expect to surface at sea.
+* **Structures** (all worlds, including old ones, for newly generated
+  chunks):
+  * Placement checks see the real terrain's biomes, so villages don't land
+    in rivers or the sea, and shipwrecks aren't left on land.
+  * Surface buildings (villages, outposts, temples, witch huts, igloos,
+    mansions) aren't placed on steep ground.
+  * Ocean monuments, which vanilla always builds at y 39, are only placed
+    where the sea floor is just below that, instead of hanging in deep
+    water.
+  * Shipwrecks need at least 12 blocks of water (8 all around) and ocean
+    ruins at least 6 (4 around), so they sit fully under water instead of on
+    beaches or in shallows. Beached shipwrecks still wash up on beaches.
+  * Around buildings the ground is filled in or cut away, as vanilla does,
+    so houses don't float above the ground or sit buried in a slope.
+
+Worlds made with earlier betas keep generating exactly as before, so newly
+explored chunks still match the old ones.
+
+## Install
+
+* **Needs:** Minecraft **1.21.1** with **NeoForge 21.1**.
+* **Where the mod goes:** drop `alos-earth-neoforge.jar` from the
+  [beta release](https://github.com/Lazytive/cuddly-giggle/releases/tag/alos-earth-beta)
+  into `mods/`. (Earlier betas also came for Fabric; only NeoForge is built
+  now.)
+* **Servers:** the mod only has to be installed on the server; players
+  can join with an unmodded client.
+* **Single player:** "Create New World" starts on **ALOS Earth (1:10)**,
+  the recommended type: it's the closest to vanilla Minecraft's
+  proportions. You can also pick one of the other types:
+  * **ALOS Earth (1:10)** (the default): 1 block = 10 m, everything to
+    scale, see [The 1:10 and 1:5 worlds](#the-110-and-15-worlds).
+  * **ALOS Earth (Minecraft‑like):** the style described above.
+  * **ALOS Earth (true 1:30):** the data's real proportions, 1 block = 30 m
+    vertically as well. Hills are gentle, Everest peaks near y 358, and
+    oceans reach down to y −304 (the world runs from y −320 to 384).
+  * **ALOS Earth (1:5):** 1 block = 5 m, everything to scale, trenches
+    included.
+  * **ALOS Earth (max, 1:4.9):** the biggest Earth with real proportions that
+    fits in Minecraft. Everest is at the top of the world and the deepest
+    trench at the bottom.
+  * **ALOS Earth (1:1):** 1 block = 1 m, see [The 1:1 world](#the-11-world).
+* **Dedicated server:** set `level-type=alosearth\:earth` (Minecraft‑like),
+  `level-type=alosearth\:earth_true_scale`, `level-type=alosearth\:earth_1to10`,
+  `level-type=alosearth\:earth_1to5`, `level-type=alosearth\:earth_max` or
+  `level-type=alosearth\:earth_1to1`
+  in `server.properties` before the world is first created.
+
+### The 1:10 and 1:5 worlds
+
+Both are to scale across and up and down alike, so every mountain, valley
+and ocean has its real shape. **1:10** (1 block = 10 m):
+* **Heights:** Everest peaks near y 948, the Mariana Trench bottoms out near
+  y −1036, and the world runs from y −1152 to 1088.
+* **One world:** it's a single dimension with no squashing and no deep layers.
+* **Size:** Fuji is about 4,000 blocks across and 377 blocks tall, and the
+  Earth is 4 million blocks around.
+* **Detail:** the data has a point every 3 blocks, smoothly interpolated with
+  light detail added.
+
+**1:5** (1 block = 5 m) fits the whole Earth, trenches included, in one
+Minecraft world (y −2032 to 2031):
+* **Heights:** sea level is y 161, Everest peaks near y 1931, and the
+  Challenger Deep bottoms out just above bedrock.
+* **Size:** Fuji is about 7,500 blocks across and 755 blocks tall, and the
+  Earth is 8 million blocks around.
+* **Detail:** the data has a point every 6 blocks.
+* **Older 1:5 worlds:** worlds made with beta.18 keep sea level y 63, so only
+  their trench bottoms (below 10.4 km) are trimmed.
+
+**Max** (1 block = 4.9 m) is the biggest Earth with real proportions that
+Minecraft can hold:
+* **Heights:** sea level is y 206, the Challenger Deep is near y −2026 (just
+  above bedrock) and Everest reaches about y 2012 (just under the build
+  limit).
+
+**Clouds:** vanilla Minecraft draws clouds at y 192, which in these worlds
+would be close to sea level or even underwater. With the mod installed on
+your game, the 1:5 and max worlds draw clouds at y 480, and 1:1 draws them at
+y 1300, about 1.2–2 km above sea level. Players without the mod on a server
+still see clouds at y 192.
+
+### The 1:1 world
+
+Everything is life size: a street is a few blocks wide, the Earth is
+40 million blocks around (the map fits inside Minecraft's 30‑million‑block
+world border).
+
+* **Oceans are at their real depth.** Minecraft worlds can be at most 4,064
+  blocks tall, so the sea carries on below the world's floor (y −2032)
+  in three stacked *deep layer* dimensions, down to the Mariana Trench
+  about 11 km below sea level. Sink (or dig) past about y −2000 and you move
+  into the layer below at the same x and z. Swim back up past y 2000 in a
+  deep layer and you return to the one above. Neighbouring layers share
+  96 blocks of identical water and rock, so the join isn't visible. The deep
+  is pitch dark, and structures don't generate there.
+* **Land is 1:1 near sea level** and eases off with height so the highest
+  peaks fit under the y 2031 build limit:
+
+  | real height | block height above sea |
+  |---|---|
+  | 100 m | 94 |
+  | 1,000 m | 638 |
+  | 3,776 m (Fuji) | 1,358 |
+  | 8,849 m (Everest) | 1,928 |
+
+  Mountains higher than about 1 km are therefore squashed. Stacking layers
+  upwards as well would let them be 1:1, but you would see the mountains cut
+  off at the join (underwater you can't see far enough to notice).
+* **Detail:** the data has one point every 30 m. The mod interpolates
+  smoothly between the points and adds small bumps on top.
+* `/earth whereami` and F3 show your real elevation or depth.
+
+### Automatic updates (Prism Launcher)
+
+Every build that passes CI is published as the
+[`alos-earth-beta` release](https://github.com/Lazytive/cuddly-giggle/releases/tag/alos-earth-beta),
+always at the same link:
+<https://github.com/Lazytive/cuddly-giggle/releases/download/alos-earth-beta/alos-earth-neoforge.jar>
+
+To have Prism install and update it on every launch:
+
+1. Open **Edit instance → Settings → Custom commands**.
+2. Tick the box to enable custom commands.
+3. Paste this as the **Pre‑launch command**:
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { [Net.ServicePointManager]::SecurityProtocol='Tls12'; & ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('https://github.com/Lazytive/cuddly-giggle/releases/download/alos-earth-beta/update-alos-earth.ps1'))) } catch { Write-Host 'ALOS Earth update skipped' }"
+```
+
+On each launch it fetches [`tools/update-alos-earth.ps1`](tools/update-alos-earth.ps1)
+from the release and runs it. The script puts the newest `alos-earth-neoforge.jar`
+into the instance's `mods` folder, removing older copies (including an old
+Fabric `alos-earth.jar`). If there's no internet
+it leaves the current jar alone and the game starts normally.
+
+## Data
+
+**It works out of the box.** Where no elevation data is installed, the mod
+downloads the free **Copernicus GLO‑30** 30 m elevation model one 1°×1° tile
+at a time (about 40 MB each) the first time an area generates, and caches it
+in `alosearth-data/auto/`.
+
+* **First visit to an area:** there's a short pause while its tile
+  downloads.
+* **Open ocean:** it has no land tiles, and that is remembered so nothing is
+  re‑fetched.
+* **Sea floor:** new worlds also download ocean depths (about 250 KB per
+  tile, 1 km detail) from the free
+  [terrain tiles on AWS](https://registry.opendata.aws/terrain-tiles/),
+  whose oceans come from ETOPO1 and GEBCO, into
+  `alosearth-data/auto/seafloor/`. Worlds made with an earlier beta keep
+  their shallow seas, so new chunks still match the ones already
+  generated.
+* **Offline:** unreachable areas become ocean; the mod tries again later.
+
+Install your own data to override it. The first launch writes
+`config/alosearth.json` and creates these folders; relative paths are
+resolved against the game or server folder:
+
+| folder | what | needed? |
+|---|---|---|
+| `alosearth-data/aw3d30/` | JAXA ALOS AW3D30 zip bundles as downloaded (or extracted `*_DSM.tif` + `*_MSK.tif`) | optional; **preferred** over the download, and adds lakes and rivers from its water mask |
+| `alosearth-data/gebco/` | GEBCO global grid GeoTIFFs | recommended: real sea floor and poles |
+| `alosearth-data/fill/` | any lon/lat GeoTIFF DEM tiles | optional: fills gaps |
+| `alosearth-data/climate/` | Köppen‑Geiger 1 km GeoTIFF (Beck et al.) | optional: a sharper climate map than the built‑in one |
+
+* **Order of use:** AW3D30 → fill → auto‑download → GEBCO (or the
+  downloaded sea floor) → ocean.
+* **Turning off downloads:** set `"auto_download": false` in the config.
+* **Checking what's loaded:** run `/earth status`.
+
+**Climate is built in.** A 3 km Köppen‑Geiger climate map ships inside the
+mod, so deserts, steppe, jungle, taiga and ice caps appear where they really
+are without any download. It's from Rubel, Brugger, Haslinger & Auer (2017),
+[koeppen-geiger.vu-wien.ac.at](http://koeppen-geiger.vu-wien.ac.at), via the
+BSD‑licensed [kgcpy](https://github.com/cwru-sdle/kgcpy); see
+`scripts/make_climate.py`.
+
+Auto‑downloaded terrain contains modified Copernicus Service information
+(Copernicus DEM GLO‑30, © DLR e.V. 2010‑2014 and © Airbus Defence and Space
+GmbH 2014‑2018, provided under COPERNICUS by the European Union and ESA).
+
+## In game
+
+* **Commands:**
+  * `/earth status` shows which elevation data is in use.
+  * `/earth goto <place>` or `/earth goto <lat> <lon>` teleports you
+    (operators only). Built‑in places include `everest`, `fuji`,
+    `mont_blanc`, `grand_canyon`, `london`, `north_pole` and more; press Tab
+    for the list.
+  * `/earth whereami` shows latitude/longitude, biome and local scale.
+* **F3** shows your latitude/longitude.
+
+### The globe and its seams
+
+The Earth is projected onto the six faces of a cube, unfolded like this
+(each face is 333,824 blocks across):
+
+```
+            north
+    west  front  east  back
+            south
+```
+
+* **Which edges are seams:** five edges touch in this layout. The other
+  seven are *seams*.
+* **Crossing:** anything that crosses a seam (players, mobs, items, boats
+  with riders) is moved to the matching spot on the other side. It's turned
+  so it keeps its real‑world heading and keeps its momentum.
+* **Looking across:** past each seam there is a 512‑block strip that is an
+  exact copy of the terrain on the other side, so what you see ahead is
+  what you'll find.
+* **No loading pause:** chunks on the far side are loaded as you approach.
+
+**Seamless edges with Immersive Portals (Fabric only, not in the NeoForge
+build).** With [Immersive Portals](https://modrinth.com/mod/immersiveportals)
+installed alongside the old Fabric version of ALOS Earth, on both the client
+and the server, every seam becomes a see‑through portal the height of the
+world:
+* you see across the edge to the other side;
+* you walk over it with no teleport jump;
+* your heading carries on.
+The mod places these portals each time the server starts, and
+`/earth whereami` still shows where you really are. To turn them off, set
+`"seamless_edges": false` in `config/alosearth.json`; the seams then go back
+to the short teleport.
+
+**Distant Horizons (optional).** Install
+[Distant Horizons](https://modrinth.com/mod/distanthorizons) for 1.21.1 and
+ALOS Earth supplies its far-away terrain directly from the elevation model:
+* ground, water and snow;
+* villages and other surface buildings (outposts, temples, witch huts,
+  igloos, ruined portals, shipwrecks, ocean ruins, mansions). Nearby (up to
+  1 LOD column per 4 blocks) they are the very buildings the chunks will
+  get: Minecraft's own structure generation is run in advance, with the
+  world seed, including the ground it fills in and cuts away under them.
+  Mobs and chest contents are left out (they aren't seen from afar).
+* trees. Nearby they are the trees the chunks will get, worked out the same
+  way. Most chunks come out exactly; where two chunks' trees meet, the order
+  the real chunks happen to be decorated in can move a tree or two, so a
+  few trees may still shift when the real chunks load. Further out each
+  biome gets a canopy measured from its own trees (how much ground they
+  cover, how tall they are, which leaves), including biomes from other
+  mods.
+
+This is much faster than letting Distant Horizons run the full world
+generator, so mountain ranges hundreds of kilometres away show up quickly.
+With Distant Horizons 3 or later, distant areas are sampled once per LOD
+column (one point per 2, 4, … 4096 blocks) instead of block by block, so far
+terrain fills in many times faster; nearby LODs still match the world
+exactly. Chunks you have actually visited still use their real blocks.
+
+**After updating ALOS Earth,** far terrain that Distant Horizons saved with
+an older version is cleared once when the world loads (the log says so), and
+Distant Horizons builds it again as you look around. On someone else's
+server, your own Distant Horizons cache may still hold old far terrain:
+clear it in Distant Horizons' settings if you see it.
+
+**Other Distant Horizons generators (DH SeedGen and the like).** These
+rebuild vanilla terrain from the world seed, so in an ALOS Earth world they
+would show hills that don't exist (which then change when you walk up to
+them). ALOS Earth's own far-terrain generator therefore takes priority in
+ALOS Earth worlds; the add-on keeps working everywhere else (the Nether,
+the End, other worlds). The log says which generator each ALOS Earth world
+uses, once the server has started: look for `far terrain for`.
+
+Immersive Portals and Distant Horizons are known not to render well
+together. If you use both, set `"seamless_edges": false`.
+
+**Biomes from other mods (optional).** ALOS Earth places vanilla biomes.
+To use biomes from mods such as Terralith or Biomes O' Plenty, map ALOS
+Earth's biomes to theirs in `config/alosearth.json`:
+
+```json
+"biomes": {
+  "forest": ["terralith:forested_highlands", "minecraft:forest"],
+  "plains": ["biomesoplenty:prairie"]
+}
+```
+
+Several biomes for one entry share the land in patches a few hundred blocks
+wide. The ground itself still comes from the elevation model, but trees,
+plants, grass colour and mob spawns come from the new biome. Ids from mods
+that aren't installed are skipped (with a line in the log). This only
+affects chunks generated after the change.
+
+Known limits:
+* Your coordinates jump when you cross a seam. (Immersive Portals makes the
+  crossing itself seamless, but the numbers still change.)
+* Blocks built or dug right at a seam aren't mirrored into the copy on the
+  other side.
+* Trees near a seam aren't copied exactly.
+
+## Performance and compatibility
+
+* **Pre‑generate** with [Chunky](https://modrinth.com/plugin/chunky). The
+  world is the same every time, so pre‑generated areas match.
+* **More cache:** raise `"cache_mb"` in `config/alosearth.json` (default
+  768) if you have memory to spare; elevation is read from disk less often.
+* **Lighting:** the 1:10 (default), 1:5 and max worlds are much taller than
+  vanilla, so lighting is a big part of the cost of new chunks.
+  [ScalableLux](https://modrinth.com/mod/scalablelux) makes it a lot faster.
+* **Tested with** (in CI, on a real NeoForge server): Distant Horizons,
+  DH SeedGen, Lithium and C2ME (multi‑threaded chunk generation), where they
+  have NeoForge releases for 1.21.1.
+* **Mods that change biome temperature** (seasons, climate mods): ALOS
+  Earth's snow‑by‑altitude change is optional, so the game still starts if
+  another mod replaces the same code. Snow then follows that mod.
+* **Very tall worlds:** the 1:5 and max worlds use Minecraft's full height
+  (y −2032 to 2031). Some cave and structure mods expect vanilla's −64 to
+  320 and may place things oddly there.
+
+## Building
+
+```bash
+./gradlew -p neoforge build    # needs JDK 21; the jar lands in neoforge/build/libs/
+```
+
+The mod's code is in `src/main`; the NeoForge entry point and metadata are in
+`neoforge/src`. (The Fabric entry points in `fabric/` and the Fabric build
+are no longer built.)
+
+The terrain core (`io.github.lazytive.alosearth.core`) is plain Java.
+`scripts/core-test.sh` runs its tests with only a JDK, after
+`python scripts/make_testdata.py` has made the fixtures using the Python
+reference implementation in the repository root.
+
+Preview any area as a PNG without starting Minecraft:
+
+```bash
+java -cp build/libs/alos-earth-*.jar io.github.lazytive.alosearth.core.Preview \
+    --aw3d30 alosearth-data/aw3d30 --bbox 35.2,138.5,35.6,139.0 --step 2 -o fuji.png
+# --true-scale or --one-to-one for the other world types; --auto DIR to download data
+```
+
+CI (`.github/workflows/mod.yml`) builds the mod, runs the core tests, then
+starts a real dedicated server with an ALOS Earth world and runs an in‑game
+self‑test. The self‑test checks generated blocks, biomes, ores, every seam
+crossing and the commands.

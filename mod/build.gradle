@@ -1,0 +1,61 @@
+plugins {
+    id 'fabric-loom' version "${loom_version}"
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    maven {
+        name = "Modrinth"
+        url = "https://api.modrinth.com/maven"
+        content { includeGroup "maven.modrinth" }
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    // optional: with Immersive Portals installed, the globe's seams become see-through portals
+    modCompileOnly "maven.modrinth:immersiveportals:${project.immersive_portals_version}"
+    // optional: with Distant Horizons installed, its far-away terrain comes straight from the terrain model
+    modCompileOnly "maven.modrinth:distanthorizons:${project.distant_horizons_version}"
+    if (project.findProperty("with_immersive_portals") == "true") {
+        modLocalRuntime "maven.modrinth:immersiveportals:${project.immersive_portals_version}"
+    }
+}
+
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+    it.options.encoding = 'UTF-8'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+// The terrain core (io.github.lazytive.alosearth.core) is plain Java with no
+// Minecraft dependency; its tests are simple main() programs so they also run
+// with just a JDK (see mod/scripts/core-test.sh).
+tasks.register('coreTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs the pure-Java terrain core tests'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'io.github.lazytive.alosearth.core.CoreTests'
+    args = [System.getenv('ALOSEARTH_TESTDATA') ?: "${rootDir}/build/testdata"]
+}
+check.dependsOn tasks.named('coreTest')

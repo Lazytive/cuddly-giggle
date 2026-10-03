@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "alosearth",
+  "version": "${version}",
+  "name": "ALOS Earth",
+  "description": "The whole Earth as Minecraft world types (Minecraft-like, 1:30, 1:10, 1:5, the largest to-scale Earth, and 1:1), generated on the fly from JAXA ALOS AW3D30 and Copernicus elevation data, on a cube-shaped globe you can walk all the way around.",
+  "authors": [
+    "Lazytive"
+  ],
+  "contact": {
+    "sources": "https://github.com/Lazytive/cuddly-giggle"
+  },
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "io.github.lazytive.alosearth.fabric.AlosEarthFabric"
+    ],
+    "client": [
+      "io.github.lazytive.alosearth.fabric.AlosEarthFabricClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.10",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  },
+  "mixins": [
+    "alosearth.mixins.json"
+  ],
+  "suggests": {
+    "immersive_portals": "*",
+    "distanthorizons": "*"
+  }
+}

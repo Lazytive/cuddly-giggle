@@ -1,0 +1,290 @@
+name: ALOS Earth mod
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write   # to publish the rolling beta release
+    env:
+      MOD_VERSION: 0.1.0-beta.${{ github.run_number }}
+    defaults:
+      run:
+        working-directory: mod
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Make test data (Python reference implementation)
+        run: |
+          python -m pip install --quiet numpy tifffile imagecodecs
+          python scripts/make_testdata.py "$GITHUB_WORKSPACE/mod/build/testdata"
+
+      - name: Look up NeoForge and the optional mods for Minecraft 1.21.1
+        run: |
+          set -euo pipefail
+          # the newest NeoForge 21.1 (a few tries; else the version pinned in neoforge/gradle.properties)
+          neo=""
+          for i in 1 2 3; do
+            neo=$(curl -sSfL --retry 3 https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml \
+              | grep -oP '<version>\K21\.1\.[0-9]+(?=</version>)' | sort -V | tail -1) && [ -n "$neo" ] && break
+            sleep 10
+          done
+          [ -n "$neo" ] || neo=$(grep -oP '^neo_version=\K.*' neoforge/gradle.properties)
+          echo "NeoForge $neo"
+          echo "NEO_VERSION=$neo" >> "$GITHUB_ENV"
+          dhv=$(curl -sSf --retry 3 'https://api.modrinth.com/v2/project/distanthorizons/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22neoforge%22%5D' \
+            | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
+          echo "Distant Horizons version id $dhv"
+          echo "ORG_GRADLE_PROJECT_distant_horizons_version=$dhv" >> "$GITHUB_ENV"
+
+      - name: Run the terrain core tests
+        env:
+          ALOSEARTH_NET: "1"
+        run: sh scripts/core-test.sh "$GITHUB_WORKSPACE/mod/build/testdata"
+
+      - name: Build the mod (NeoForge)
+        run: ./gradlew -p neoforge build --stacktrace -Pneo_version="$NEO_VERSION" -Pmod_version="$MOD_VERSION"
+
+      - name: Prepare a dedicated server with an ALOS Earth world
+        run: |
+          mkdir -p run/config
+          echo "eula=true" > run/eula.txt
+          cat > run/server.properties <<'PROPS'
+          level-type=alosearth\:earth
+          online-mode=false
+          spawn-protection=0
+          view-distance=4
+          simulation-distance=4
+          sync-chunk-writes=false
+          PROPS
+          sed -i 's/^ *//' run/server.properties
+          d="$GITHUB_WORKSPACE/mod/build/testdata/data"
+          cat > run/config/alosearth.json <<JSON
+          {
+            "aw3d30": ["$d/aw3d30"],
+            "fill_dem": [],
+            "bathymetry": ["$d/gebco.tif"],
+            "climate": ["$d/climate"],
+            "auto_download": false,
+            "cache_mb": 256
+          }
+          JSON
+          # a mod from Modrinth for 1.21.1 on NeoForge into run/mods: fetch-mod <slug> [file name]
+          cat > fetch-mod.sh <<'SH'
+          #!/bin/sh
+          set -e
+          url=$(curl -sSf "https://api.modrinth.com/v2/project/$1/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22neoforge%22%5D" \
+            | python3 -c "import json,sys; v=json.load(sys.stdin)[0]; f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url']); print('$1', v['version_number'], file=sys.stderr)")
+          mkdir -p run/mods
+          curl -sSfL -o "run/mods/${2:-$1}.jar" "$url"
+          SH
+          sed -i 's/^          //' fetch-mod.sh
+          chmod +x fetch-mod.sh
+
+      - name: Run the in-game self-test on a real server
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          sh scripts/ci-run-server.sh
+          grep -iE "exception|error" run/logs/latest.log | head -40 || true
+          cat run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+
+      - name: Run the in-game self-test on a true 1:30 world
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth_true_scale/' run/server.properties
+          sh scripts/ci-run-server.sh
+          cat run/alosearth-selftest.txt
+          grep -q "world height -320..384" run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
+
+      - name: Run the in-game self-test with Distant Horizons (LODs from the terrain model)
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt run/mods
+          # the same Distant Horizons version the mod was compiled against
+          mkdir -p run/mods
+          url=$(curl -sSf "https://api.modrinth.com/v2/version/$ORG_GRADLE_PROJECT_distant_horizons_version" \
+            | python3 -c "import json,sys; v=json.load(sys.stdin); f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url']); print(v['version_number'], file=sys.stderr)")
+          curl -sSfL -o run/mods/distanthorizons.jar "$url"
+          # far terrain saved by an older ALOS Earth (no version mark) must be cleared before Distant Horizons opens it
+          mkdir -p run/world/data
+          echo "stale" > run/world/data/DistantHorizons.sqlite
+          sh scripts/ci-run-server.sh
+          grep -iE "distant ?horizons|exception|error" run/logs/latest.log | grep -v "SQL update" | head -60 || true
+          grep -q "far terrain saved for the overworld was cleared" run/logs/latest.log
+          grep -qx "$(grep -o 'FAR_TERRAIN_VERSION = [0-9]*' src/main/java/io/github/lazytive/alosearth/compat/DistantHorizonsEarth.java | grep -o '[0-9]*$')" run/world/data/alosearth-far-terrain.txt
+          cat run/alosearth-selftest.txt
+          grep -q "LOD chunks .* pass its checks" run/alosearth-selftest.txt
+          grep -q "far terrain at any detail" run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          rm -rf run/mods
+
+      - name: Run the in-game self-test with Distant Horizons and DH SeedGen (another far-terrain generator)
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt run/mods
+          mkdir -p run/mods
+          url=$(curl -sSf "https://api.modrinth.com/v2/version/$ORG_GRADLE_PROJECT_distant_horizons_version" \
+            | python3 -c "import json,sys; v=json.load(sys.stdin); f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url'])")
+          curl -sSfL -o run/mods/distanthorizons.jar "$url"
+          if ! ./fetch-mod.sh distant-horizons-seedgen seedgen; then
+            echo "No DH SeedGen release for 1.21.1 on NeoForge: skipped"
+            rm -rf run/mods
+            exit 0
+          fi
+          sh scripts/ci-run-server.sh
+          grep -iE "seedgen|seed renderer|distant horizons" run/logs/latest.log | grep -v "SQL update" | head -40 || true
+          cat run/alosearth-selftest.txt
+          grep -q "the far-terrain generator in use is ALOS Earth's" run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          rm -rf run/mods
+
+      - name: Run the in-game self-test with C2ME and Lithium (multi-threaded chunk generation)
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt run/mods
+          ./fetch-mod.sh lithium || echo "No Lithium release for 1.21.1 on NeoForge"
+          ./fetch-mod.sh c2me-neoforge c2me || ./fetch-mod.sh c2me-fabric c2me || echo "No C2ME release for 1.21.1 on NeoForge"
+          ls run/mods
+          sh scripts/ci-run-server.sh
+          grep -iE "c2me|lithium" run/logs/latest.log | head -20 || true
+          grep -iE "exception|error" run/logs/latest.log | head -40 || true
+          cat run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          rm -rf run/mods
+
+      - name: Run the in-game self-test on a 1:10 world
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth_1to10/' run/server.properties
+          sh scripts/ci-run-server.sh
+          cat run/alosearth-selftest.txt
+          grep -q "world height -1152..1088" run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
+
+      - name: Run the in-game self-test on a 1:5 world
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth_1to5/' run/server.properties
+          sh scripts/ci-run-server.sh
+          cat run/alosearth-selftest.txt
+          grep -q "world height -2032..2032" run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
+
+      - name: Run the in-game self-test on the max world (1:4.9)
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth_max/' run/server.properties
+          sh scripts/ci-run-server.sh
+          cat run/alosearth-selftest.txt
+          grep -q "world height -2032..2032" run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
+
+      - name: Run the in-game self-test on a 1:1 world (deep ocean layers)
+        env:
+          ALOSEARTH_SELFTEST: "1"
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth_1to1/' run/server.properties
+          start=$(date +%s)
+          sh scripts/ci-run-server.sh
+          echo "world creation + checks took $(( $(date +%s) - start )) s"
+          cat run/alosearth-selftest.txt
+          grep -q "world height -2032..2032" run/alosearth-selftest.txt
+          grep -q "pig crossed the layer join both ways" run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+          sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
+
+      - name: Self-test a fresh world using only auto-downloaded elevation
+        env:
+          ALOSEARTH_SELFTEST: auto
+        run: |
+          rm -rf run/world run/alosearth-selftest.txt
+          cat > run/config/alosearth.json <<JSON
+          {
+            "aw3d30": [],
+            "fill_dem": [],
+            "bathymetry": [],
+            "climate": [],
+            "auto_download": true,
+            "cache_mb": 256
+          }
+          JSON
+          start=$(date +%s)
+          sh scripts/ci-run-server.sh 900
+          echo "world creation + checks took $(( $(date +%s) - start )) s"
+          grep -h "Elevation download" run/logs/latest.log | tail -5 || true
+          cat run/alosearth-selftest.txt
+          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
+
+      - name: Upload server log and self-test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-logs
+          path: |
+            mod/run/logs/latest.log
+            mod/run/alosearth-selftest.txt
+          if-no-files-found: ignore
+
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: alos-earth-mod
+          path: mod/neoforge/build/libs/*.jar
+
+      - name: Publish the rolling beta release (stable download link)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/minecraft-alos-world-generation-tgwoi0')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jar=$(ls neoforge/build/libs/*.jar | grep -v -- '-sources' | head -1)
+          cp "$jar" build/alos-earth-neoforge.jar
+          notes="Latest build of the ALOS Earth mod for Minecraft 1.21.1 on NeoForge 21.1: $MOD_VERSION, from commit $GITHUB_SHA. It passed the core tests and the in-game self-tests on a real NeoForge server.
+
+          Install: put alos-earth-neoforge.jar in your instance's mods folder, or let update-alos-earth.ps1 do it on every launch (see mod/README.md)."
+          # One permanent release whose files are replaced on every build. (Re-creating it would
+          # need a new tag at this commit, and the workflow token may not create tags on commits
+          # that change workflow files; the tag is made once, on the default branch.)
+          if ! gh release view alos-earth-beta >/dev/null 2>&1; then
+            gh release create alos-earth-beta --prerelease --target "${{ github.event.repository.default_branch }}" \
+              --title "ALOS Earth beta" --notes "$notes"
+          fi
+          gh release upload alos-earth-beta build/alos-earth-neoforge.jar tools/update-alos-earth.ps1 --clobber
+          # the Fabric version is no longer built: don't leave an old copy where it could be mistaken for current
+          gh release delete-asset alos-earth-beta alos-earth.jar -y 2>/dev/null || true
+          gh release edit alos-earth-beta --prerelease --title "ALOS Earth beta (latest build: $MOD_VERSION)" --notes "$notes"

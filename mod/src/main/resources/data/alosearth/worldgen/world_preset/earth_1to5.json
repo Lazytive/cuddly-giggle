@@ -1,0 +1,56 @@
+{
+  "dimensions": {
+    "minecraft:overworld": {
+      "type": "alosearth:earth_1to5",
+      "generator": {
+        "type": "alosearth:earth",
+        "biome_source": {
+          "type": "alosearth:earth",
+          "settings": {
+            "meters_per_block": 5.0,
+            "min_y": -2032,
+            "height": 4064,
+            "detail": 0.3,
+            "true_scale": true,
+            "sea_floor": true,
+            "true_ocean": true,
+            "sea_level": 161,
+            "version": 1
+          }
+        },
+        "settings": {
+          "meters_per_block": 5.0,
+          "min_y": -2032,
+          "height": 4064,
+          "detail": 0.3,
+          "true_scale": true,
+          "sea_floor": true,
+          "true_ocean": true,
+          "sea_level": 161,
+          "version": 1
+        }
+      }
+    },
+    "minecraft:the_nether": {
+      "type": "minecraft:the_nether",
+      "generator": {
+        "type": "minecraft:noise",
+        "settings": "minecraft:nether",
+        "biome_source": {
+          "type": "minecraft:multi_noise",
+          "preset": "minecraft:nether"
+        }
+      }
+    },
+    "minecraft:the_end": {
+      "type": "minecraft:the_end",
+      "generator": {
+        "type": "minecraft:noise",
+        "settings": "minecraft:end",
+        "biome_source": {
+          "type": "minecraft:the_end"
+        }
+      }
+    }
+  }
+}
