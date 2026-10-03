@@ -16,6 +16,7 @@ import com.seibel.distanthorizons.api.objects.data.DhApiTerrainDataPoint;
 import com.seibel.distanthorizons.api.objects.data.IDhApiFullDataSource;
 import io.github.lazytive.alosearth.AlosEarth;
 import io.github.lazytive.alosearth.EarthChunkGenerator;
+import io.github.lazytive.alosearth.LodTrees;
 import io.github.lazytive.alosearth.core.Palette;
 import io.github.lazytive.alosearth.core.Terrain;
 import java.lang.reflect.InvocationTargetException;
@@ -126,11 +127,12 @@ public final class DistantHorizonsEarth {
                         String bad = checkColumn(col, minY, maxY);
                         if (bad != null) return "chunk " + c.chunkPosX + "," + c.chunkPosZ + " column " + lx + "," + lz + ": " + bad;
                         columns++;
+                        int airs = 0;
                         for (DhApiTerrainDataPoint d : col) {
                             if (d.blockStateWrapper == water) wet++;
-                            if (d.blockStateWrapper != water && !d.blockStateWrapper.isAir() && d.bottomYBlockPos > minY
-                                && d.skyLightLevel == 15 && d.topYBlockPos - d.bottomYBlockPos == 3) canopy++;
+                            if (d.blockStateWrapper.isAir()) airs++;
                         }
+                        if (airs >= 2) canopy++; // something stands between the ground and the open sky: trees
                     }
                 }
                 if (convert != null) {
@@ -145,7 +147,7 @@ public final class DistantHorizonsEarth {
             if (wet == 0) return "no water in the LODs over the test lake and sea";
             String version = io.github.lazytive.alosearth.Platform.get().modVersion("distanthorizons");
             notes.add("Distant Horizons " + version + ": " + chunks.size() + " LOD chunks (" + columns + " columns, " + wet
-                + " with water, " + canopy + " with tree tops) pass its checks" + (convert != null ? " and converter" : ""));
+                + " with water, " + canopy + " with trees) pass its checks" + (convert != null ? " and converter" : ""));
             if (!g.dataSources) {
                 notes.add("Distant Horizons: API " + DhApi.getApiMajorVersion() + "." + DhApi.getApiMinorVersion()
                     + ", so far terrain comes block by block");
@@ -196,8 +198,11 @@ public final class DistantHorizonsEarth {
                         Terrain.Tile tile = far != null ? far : t.tileAt(bx, bz);
                         int i = far != null ? z * w + x : Terrain.index(bx, bz);
                         int want = Math.max(tile.top[i], tile.water[i]) + 1 - minY, got = Integer.MAX_VALUE;
-                        for (DhApiTerrainDataPoint d : col) {
-                            if (d.blockStateWrapper.isAir()) got = Math.min(got, d.bottomYBlockPos);
+                        java.util.Collection<IDhApiBlockStateWrapper> treeBlocks = g.wrappers.values();
+                        for (DhApiTerrainDataPoint d : col) { // the first thing above the ground: air, or a tree
+                            if (d.blockStateWrapper.isAir() || treeBlocks.contains(d.blockStateWrapper)) {
+                                got = Math.min(got, d.bottomYBlockPos);
+                            }
                         }
                         if (got != want) off++;
                     }
@@ -273,7 +278,12 @@ public final class DistantHorizonsEarth {
         private final IDhApiBlockStateWrapper[] blocks = new IDhApiBlockStateWrapper[Palette.BLOCKS.length];
         private final IDhApiBiomeWrapper[] biomes = new IDhApiBiomeWrapper[Palette.BIOMES.length];
         private final Map<Holder<Biome>, IDhApiBiomeWrapper> replaced = new ConcurrentHashMap<>();
-        private volatile IDhApiBlockStateWrapper air, oakLeaves, spruceLeaves, jungleLeaves, acaciaLeaves, cherryLeaves;
+        private volatile IDhApiBlockStateWrapper air;
+        private final Map<BlockState, IDhApiBlockStateWrapper> wrappers = new ConcurrentHashMap<>();
+        /** The trees Minecraft will grow here, for near terrain, and each biome's canopy, for far. */
+        final io.github.lazytive.alosearth.LodTrees trees;
+        /** Up to this detail level (1 column per 2^n blocks) far terrain shows the real trees. */
+        static final int EXACT_TREES = 2;
 
         /** Distant Horizons 3 and later (API 7.1): far-away terrain comes at whatever detail it needs. */
         final boolean dataSources = dataSourcesSupported();
@@ -282,6 +292,7 @@ public final class DistantHorizonsEarth {
             this.level = level;
             this.gen = gen;
             this.lw = lw;
+            this.trees = new io.github.lazytive.alosearth.LodTrees(level, gen);
         }
 
         private static boolean dataSourcesSupported() {
@@ -324,15 +335,39 @@ public final class DistantHorizonsEarth {
             int w = source.getWidthInDataColumns(), step = 1 << detail;
             int minY = level.getMinBuildHeight(), maxY = level.getMaxBuildHeight();
             Terrain.Tile far = detail == 0 ? null : t.far(x0, z0, step, w);
-            List<DhApiTerrainDataPoint> col = new ArrayList<>(8);
+            // near: the very trees the chunks will get; further out: each biome's own canopy
+            LodTrees.Area area = null;
+            if (trees.hasTrees() && detail <= EXACT_TREES) {
+                area = trees.area(x0, z0, w * step);
+                trees.observe(area, x0, z0, w * step);
+            }
+            List<DhApiTerrainDataPoint> col = new ArrayList<>(16);
             for (int z = 0; z < w; z++) {
                 for (int x = 0; x < w; x++) {
                     col.clear();
                     if (far == null) {
                         int bx = x0 + x, bz = z0 + z;
-                        column(t, t.tileAt(bx, bz), Terrain.index(bx, bz), bx, bz, minY, maxY, -minY, col);
+                        column(t, t.tileAt(bx, bz), Terrain.index(bx, bz), bx, bz, minY, maxY, -minY, col, area, bx, bz, null);
                     } else {
-                        column(t, far, z * w + x, x0 + x * step + step / 2, z0 + z * step + step / 2, minY, maxY, -minY, col);
+                        int bx = x0 + x * step + step / 2, bz = z0 + z * step + step / 2, i = z * w + x;
+                        int tx = bx, tz = bz;
+                        LodTrees.Canopy canopy = null;
+                        if (area != null) { // the tallest tree column in this square stands for it
+                            int best = Integer.MIN_VALUE;
+                            for (int dz = 0; dz < step; dz++) {
+                                for (int dx = 0; dx < step; dx++) {
+                                    int[] ys = LodTrees.heights(area, x0 + x * step + dx, z0 + z * step + dz);
+                                    if (ys != null && ys[ys.length - 1] > best) {
+                                        best = ys[ys.length - 1];
+                                        tx = x0 + x * step + dx;
+                                        tz = z0 + z * step + dz;
+                                    }
+                                }
+                            }
+                        } else if (trees.hasTrees() && far.water[i] <= far.top[i]) {
+                            canopy = trees.canopy(earthBiomes().biomeAt(far.biome[i], bx, bz), bx, bz);
+                        }
+                        column(t, far, i, bx, bz, minY, maxY, -minY, col, area, tx, tz, canopy);
                     }
                     source.setApiDataPointColumn(x, z, EDhApiWorldGenerationStep.LIGHT, col);
                 }
@@ -355,11 +390,12 @@ public final class DistantHorizonsEarth {
             int minY = level.getMinBuildHeight(), maxY = level.getMaxBuildHeight();
             DhApiChunk c = DhApiChunk.create(cx, cz, minY, maxY);
             Terrain.Tile tile = t.tileAt(cx << 4, cz << 4);
+            LodTrees.Area area = trees.hasTrees() ? trees.area(cx << 4, cz << 4, 16) : null;
             for (int lz = 0; lz < 16; lz++) {
                 for (int lx = 0; lx < 16; lx++) {
                     int x = (cx << 4) + lx, z = (cz << 4) + lz;
-                    List<DhApiTerrainDataPoint> col = new ArrayList<>(8);
-                    column(t, tile, Terrain.index(x, z), x, z, minY, maxY, 0, col);
+                    List<DhApiTerrainDataPoint> col = new ArrayList<>(16);
+                    column(t, tile, Terrain.index(x, z), x, z, minY, maxY, 0, col, area, x, z, null);
                     c.setDataPoints(lx, lz, col);
                 }
             }
@@ -372,7 +408,7 @@ public final class DistantHorizonsEarth {
          * world. Heights are shifted by {@code yOff} (data sources count from the bottom of the world).
          */
         private void column(Terrain t, Terrain.Tile tile, int i, int x, int z, int minY, int maxY, int yOff,
-                            List<DhApiTerrainDataPoint> col) {
+                            List<DhApiTerrainDataPoint> col, LodTrees.Area area, int treeX, int treeZ, LodTrees.Canopy canopy) {
             int top = Math.max(minY, Math.min(maxY - 2, tile.top[i]));
             int water = Math.min(maxY - 1, tile.water[i]);
             IDhApiBiomeWrapper biome = biome(tile.biome[i], x, z);
@@ -389,17 +425,46 @@ public final class DistantHorizonsEarth {
             int surfaceSky = water > top ? Math.max(0, 15 - (water - top)) : 15;
             col.add(point(top + yOff, top + 1 + yOff, surfaceSky, block(solid(t.block(tile, i, x, top, z))), biome));
             y = top + 1;
-            if (water > top) {
-                col.add(point(y + yOff, water + 1 + yOff, 15, block(Palette.WATER), biome));
-                y = water + 1;
-            } else {
-                IDhApiBlockStateWrapper leaves = canopy(Palette.BIOMES[tile.biome[i]], x, z);
-                if (leaves != null && y + 7 < maxY) { // tree tops over forests, so they look green from afar
-                    col.add(point(y + yOff, y + 4 + yOff, 15, air(), biome));
-                    col.add(point(y + 4 + yOff, y + 7 + yOff, 15, leaves, biome));
-                    y += 7;
+
+            // above the ground: water, and the trees (as Minecraft will grow them, or the biome's canopy)
+            int[] ys = area == null ? null : LodTrees.heights(area, treeX, treeZ);
+            BlockState[] st = area == null ? null : LodTrees.states(area, treeX, treeZ);
+            int crownLow = Integer.MAX_VALUE, crownTop = Integer.MIN_VALUE;
+            IDhApiBlockStateWrapper crown = null;
+            if (canopy != null) {
+                long h = (x * 0x9E3779B97F4A7C15L) ^ (z * 0xC2B2AE3D27D4EB4FL);
+                h ^= h >>> 29;
+                h *= 0xBF58476D1CE4E5B9L;
+                double u1 = ((h >>> 11) & 0xFFFFF) / (double) 0x100000, u2 = ((h >>> 33) & 0xFFFFF) / (double) 0x100000;
+                if (u1 < canopy.cover()) {
+                    crownTop = top + Math.max(1, canopy.top(u2));
+                    crownLow = Math.min(crownTop, top + canopy.crownBottom());
+                    crown = state(canopy.leaves());
                 }
             }
+            int last = Math.max(water, Math.max(crownTop, ys == null ? Integer.MIN_VALUE : ys[ys.length - 1]));
+            last = Math.min(last, maxY - 1);
+            int k = 0;
+            while (ys != null && k < ys.length && ys[k] < y) k++;
+            IDhApiBlockStateWrapper run = null;
+            int runStart = y;
+            for (; y <= last; y++) {
+                IDhApiBlockStateWrapper b;
+                if (ys != null && k < ys.length && ys[k] == y) {
+                    b = state(st[k]);
+                    k++;
+                } else if (y >= crownLow && y <= crownTop) {
+                    b = crown;
+                } else {
+                    b = y <= water ? block(Palette.WATER) : air();
+                }
+                if (b != run) {
+                    if (run != null) col.add(point(runStart + yOff, y + yOff, 15, run, biome));
+                    run = b;
+                    runStart = y;
+                }
+            }
+            if (run != null) col.add(point(runStart + yOff, y + yOff, 15, run, biome));
             if (y < maxY) col.add(point(y + yOff, maxY + yOff, 15, air(), biome));
         }
 
@@ -421,41 +486,17 @@ public final class DistantHorizonsEarth {
             return w;
         }
 
+        private IDhApiBlockStateWrapper state(BlockState s) {
+            return wrappers.computeIfAbsent(s, k -> DhApi.Delayed.wrapperFactory.getBlockStateWrapper(new Object[] {k}, lw));
+        }
+
+        private io.github.lazytive.alosearth.EarthBiomeSource earthBiomes() {
+            return (io.github.lazytive.alosearth.EarthBiomeSource) gen.getBiomeSource();
+        }
+
         private IDhApiBlockStateWrapper air() {
             if (air == null) air = DhApi.Delayed.wrapperFactory.getAirBlockStateWrapper();
             return air;
-        }
-
-        private IDhApiBlockStateWrapper named(String id) {
-            BlockState s = BuiltInRegistries.BLOCK.get(ResourceLocation.withDefaultNamespace(id)).defaultBlockState();
-            return DhApi.Delayed.wrapperFactory.getBlockStateWrapper(new Object[] {s}, lw);
-        }
-
-        /** A leaf canopy for wooded biomes (about 70% cover), or null. */
-        private IDhApiBlockStateWrapper canopy(String biome, int x, int z) {
-            if (((x * 734287 + z * 912931) >>> 7 & 7) < 3) return null; // gaps between the trees
-            if (biome.contains("jungle") || biome.equals("mangrove_swamp")) {
-                if (jungleLeaves == null) jungleLeaves = named("jungle_leaves");
-                return jungleLeaves;
-            }
-            if (biome.contains("taiga") || biome.equals("grove") || biome.equals("windswept_forest")) {
-                if (spruceLeaves == null) spruceLeaves = named("spruce_leaves");
-                return spruceLeaves;
-            }
-            if (biome.equals("cherry_grove")) {
-                if (cherryLeaves == null) cherryLeaves = named("cherry_leaves");
-                return cherryLeaves;
-            }
-            if (biome.contains("savanna")) {
-                if (((x * 31 + z * 17) & 3) != 0) return null; // sparse
-                if (acaciaLeaves == null) acaciaLeaves = named("acacia_leaves");
-                return acaciaLeaves;
-            }
-            if (biome.contains("forest") || biome.equals("swamp")) {
-                if (oakLeaves == null) oakLeaves = named("oak_leaves");
-                return oakLeaves;
-            }
-            return null;
         }
 
         private IDhApiBiomeWrapper biome(int idx, int x, int z) {

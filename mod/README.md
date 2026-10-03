@@ -288,7 +288,12 @@ to the short teleport.
 [Distant Horizons](https://modrinth.com/mod/distanthorizons) for 1.21.1 and
 ALOS Earth supplies its far-away terrain directly from the elevation model:
 * ground, water and snow;
-* a leaf canopy over forests.
+* trees. Nearby (up to 1 LOD column per 4 blocks) they are the very trees
+  the chunks will get: Minecraft's own tree generation is run in advance,
+  with the world seed, so nothing changes when the real chunks load.
+  Further out each biome gets a canopy measured from its own trees (how
+  much ground they cover, how tall they are, which leaves), including
+  biomes from other mods.
 
 This is much faster than letting Distant Horizons run the full world
 generator, so mountain ranges hundreds of kilometres away show up quickly.

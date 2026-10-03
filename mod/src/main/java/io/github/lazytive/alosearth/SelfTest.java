@@ -356,6 +356,60 @@ final class SelfTest {
             }
         }
 
+        // 10. the trees far terrain shows are the trees the chunk gets: in a forest near the test area,
+        // worked out without generating it, then compared with the real chunk (logs and leaves)
+        {
+            double[] at = new double[2];
+            t.projection.forward(139.5, 35.5, at);
+            int w = 64, step = 32, x0 = (int) at[0] - w * step / 2, z0 = (int) at[1] - w * step / 2, best = -1;
+            Terrain.Tile far = t.far(x0, z0, step, w);
+            double bestD = Double.MAX_VALUE;
+            for (int k = 0; k < w * w; k++) {
+                String b = Palette.BIOMES[far.biome[k]];
+                if (far.water[k] > far.top[k] || !(b.contains("forest") || b.contains("taiga") || b.contains("jungle"))) continue;
+                double dx = k % w - w / 2.0, dz = k / w - w / 2.0;
+                if (dx * dx + dz * dz < bestD) {
+                    bestD = dx * dx + dz * dz;
+                    best = k;
+                }
+            }
+            if (best < 0) {
+                notes.add("trees: no forest near the test area");
+            } else {
+                int cx = (x0 + (best % w) * step + step / 2) >> 4, cz = (z0 + (best / w) * step + step / 2) >> 4;
+                long t0 = System.nanoTime();
+                LodTrees lod = new LodTrees(level, gen);
+                LodTrees.Area area = lod.area(cx << 4, cz << 4, 16);
+                long simMs = (System.nanoTime() - t0) / 1_000_000;
+                for (int dz = -1; dz <= 1; dz++) {
+                    for (int dx = -1; dx <= 1; dx++) level.getChunk(cx + dx, cz + dz); // the real ones, with their neighbours' trees
+                }
+                int real = 0, simulated = 0, both = 0;
+                for (int lz = 0; lz < 16; lz++) {
+                    for (int lx = 0; lx < 16; lx++) {
+                        int x = (cx << 4) + lx, z = (cz << 4) + lz;
+                        java.util.Set<Integer> sim = new java.util.HashSet<>();
+                        int[] ys = LodTrees.heights(area, x, z);
+                        net.minecraft.world.level.block.state.BlockState[] st = LodTrees.states(area, x, z);
+                        int ground = t.top(x, z);
+                        if (ys != null) for (int k = 0; k < ys.length; k++) if (ys[k] > ground && LodTrees.isTreeBlock(st[k])) sim.add(ys[k]);
+                        int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
+                        for (int y = ground + 1; y < top; y++) {
+                            if (LodTrees.isTreeBlock(level.getBlockState(new BlockPos(x, y, z)))) {
+                                real++;
+                                if (sim.contains(y)) both++;
+                            }
+                        }
+                        simulated += sim.size();
+                    }
+                }
+                double match = real + simulated == both ? 1 : both / (double) (real + simulated - both);
+                notes.add(String.format("trees: %s chunk %d,%d has %d log and leaf blocks, %d worked out in advance (%d ms), %.0f%% the same",
+                    Palette.BIOMES[far.biome[best]], cx, cz, real, simulated, simMs, 100 * match));
+                if (real == 0 || match < 0.75) errors.add("the trees worked out for far terrain don't match the real chunk");
+            }
+        }
+
         // 8. with Distant Horizons: the LOD columns it gets from the terrain model pass its own checks
         if (AlosEarth.DISTANT_HORIZONS) {
             String problem = io.github.lazytive.alosearth.compat.DistantHorizonsEarth.check(level, gen, notes);
