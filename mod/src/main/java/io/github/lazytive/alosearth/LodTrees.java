@@ -38,10 +38,11 @@ import net.minecraft.world.level.levelgen.placement.PlacedFeature;
 import net.minecraft.world.level.material.FluidState;
 
 /**
- * The trees a chunk will get, worked out without generating it: Minecraft's own tree features run,
- * with the world seed, in the order and with the random numbers Minecraft's decoration uses, on a
- * stand-in world that answers from the terrain model and only records what the trees place. So far
- * terrain (Distant Horizons) can show the very trees that appear when the chunk loads.
+ * The trees (and plants) a chunk will get, worked out without generating it: Minecraft's own
+ * vegetation features run, with the world seed, in the order and with the random numbers Minecraft's
+ * decoration uses, on a stand-in world that answers from the terrain model and only records what
+ * they place. So far terrain (Distant Horizons) can show the very trees that appear when the chunk
+ * loads.
  *
  * <p>Trees are worked out per chunk on their own; where two chunks' trees meet, the real world can
  * differ a little (which chunk was decorated first decides which tree fits).
@@ -88,7 +89,7 @@ public final class LodTrees {
         return false;
     }
 
-    /** The tree blocks (logs, leaves, vines...) that decorating chunk (cx, cz) places, by block position. */
+    /** The blocks (trees, plants) that decorating chunk (cx, cz) places, by block position. */
     public Map<Long, BlockState> chunk(int cx, int cz) {
         long key = ((long) cx << 32) ^ (cz & 0xffffffffL);
         synchronized (cache) {
@@ -275,8 +276,14 @@ public final class LodTrees {
         int[] indices = near.stream().flatMap(b -> {
             List<HolderSet<PlacedFeature>> f = gen.getBiomeGenerationSettings(b).features();
             return vegetal < f.size() ? f.get(vegetal).stream() : java.util.stream.Stream.empty();
-        }).mapToInt(h -> step.indexMapping().applyAsInt(h.value())).filter(k -> k >= 0 && k < isTree.length && isTree[k])
+        }).mapToInt(h -> step.indexMapping().applyAsInt(h.value())).filter(k -> k >= 0 && k < isTree.length)
             .distinct().sorted().toArray();
+        // All of the step runs, not just the trees: a flower or a bush placed before a tree can stand where
+        // its trunk would go, and then that tree fails and every later one in the chunk moves (they share
+        // one stream of random numbers).
+        boolean anyTree = false;
+        for (int k : indices) anyTree |= isTree[k];
+        if (!anyTree) return placed;
         if (indices.length == 0) return placed;
 
         WorldGenLevel world = standIn(placed);
