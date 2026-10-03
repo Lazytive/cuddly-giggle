@@ -38,11 +38,17 @@ jobs:
       - name: Look up NeoForge and the optional mods for Minecraft 1.21.1
         run: |
           set -euo pipefail
-          neo=$(curl -sSf https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml \
-            | grep -oP '<version>\K21\.1\.[0-9]+(?=</version>)' | sort -V | tail -1)
+          # the newest NeoForge 21.1 (a few tries; else the version pinned in neoforge/gradle.properties)
+          neo=""
+          for i in 1 2 3; do
+            neo=$(curl -sSfL --retry 3 https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml \
+              | grep -oP '<version>\K21\.1\.[0-9]+(?=</version>)' | sort -V | tail -1) && [ -n "$neo" ] && break
+            sleep 10
+          done
+          [ -n "$neo" ] || neo=$(grep -oP '^neo_version=\K.*' neoforge/gradle.properties)
           echo "NeoForge $neo"
           echo "NEO_VERSION=$neo" >> "$GITHUB_ENV"
-          dhv=$(curl -sSf 'https://api.modrinth.com/v2/project/distanthorizons/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22neoforge%22%5D' \
+          dhv=$(curl -sSf --retry 3 'https://api.modrinth.com/v2/project/distanthorizons/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22neoforge%22%5D' \
             | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
           echo "Distant Horizons version id $dhv"
           echo "ORG_GRADLE_PROJECT_distant_horizons_version=$dhv" >> "$GITHUB_ENV"
