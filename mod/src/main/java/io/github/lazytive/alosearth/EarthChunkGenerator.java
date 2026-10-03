@@ -236,33 +236,45 @@ public final class EarthChunkGenerator extends ChunkGenerator {
         if (chunk.getAllReferences().isEmpty() && chunk.getAllStarts().isEmpty()) return;
         net.minecraft.world.level.levelgen.Beardifier beard =
             net.minecraft.world.level.levelgen.Beardifier.forStructuresInChunk(structureManager, chunk.getPos());
-        Terrain t = terrain();
-        BlockState[] st = states();
         int x0 = chunk.getPos().getMinBlockX(), z0 = chunk.getPos().getMinBlockZ();
         int minY = chunk.getMinBuildHeight(), maxY = chunk.getMaxBuildHeight() - 1;
         Heightmap oceanFloor = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.OCEAN_FLOOR_WG);
         Heightmap worldSurface = chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.WORLD_SURFACE_WG);
-        Terrain.Tile tile = t.tileAt(x0, z0);
         for (int c = 0; c < 256; c++) {
-            int lx = c & 15, lz = c >> 4, x = x0 + lx, z = z0 + lz, i = Terrain.index(x, z);
-            int top = tile.top[i], water = tile.water[i];
-            int newTop = Integer.MIN_VALUE;
-            for (int y = Math.max(minY, top - 16); y <= Math.min(maxY, top + 32); y++) {
-                double b = beard.compute(new net.minecraft.world.level.levelgen.DensityFunction.SinglePointContext(x, y, z));
-                if (b == 0) continue;
-                boolean solid = (top - y + 0.5) / 8.0 + b > 0, wasSolid = y <= top;
-                if (solid == wasSolid) continue;
-                BlockState state = solid ? st[Palette.DIRT] : y <= water ? st[Palette.WATER] : st[Palette.AIR];
+            int lx = c & 15, lz = c >> 4;
+            adaptColumn(beard, x0 + lx, z0 + lz, minY, maxY, (y, state) -> {
                 chunk.getSection(chunk.getSectionIndex(y)).setBlockState(lx, y & 15, lz, state, false);
                 oceanFloor.update(lx, y, lz, state);
                 worldSurface.update(lx, y, lz, state);
-                if (solid) newTop = Math.max(newTop, y);
-            }
-            if (newTop > top) { // the raised ground gets the column's own surface block
-                BlockState surface = st[t.block(tile, i, x, top, z)];
-                chunk.getSection(chunk.getSectionIndex(newTop)).setBlockState(lx, newTop & 15, lz, surface, false);
-            }
+            });
         }
+    }
+
+    /** Where a block of the terrain changes: at height y, to this block. */
+    public interface BlockOut {
+        void set(int y, BlockState state);
+    }
+
+    /**
+     * The changes the structures' beard makes to column (x, z), bottom to top (the raised ground's
+     * new top block last). Far terrain (Distant Horizons) uses this too, to match the world.
+     */
+    public void adaptColumn(net.minecraft.world.level.levelgen.Beardifier beard, int x, int z, int minY, int maxY, BlockOut out) {
+        Terrain t = terrain();
+        BlockState[] st = states();
+        Terrain.Tile tile = t.tileAt(x, z);
+        int i = Terrain.index(x, z);
+        int top = tile.top[i], water = tile.water[i];
+        int newTop = Integer.MIN_VALUE;
+        for (int y = Math.max(minY, top - 16); y <= Math.min(maxY, top + 32); y++) {
+            double b = beard.compute(new net.minecraft.world.level.levelgen.DensityFunction.SinglePointContext(x, y, z));
+            if (b == 0) continue;
+            boolean solid = (top - y + 0.5) / 8.0 + b > 0, wasSolid = y <= top;
+            if (solid == wasSolid) continue;
+            out.set(y, solid ? st[Palette.DIRT] : y <= water ? st[Palette.WATER] : st[Palette.AIR]);
+            if (solid) newTop = Math.max(newTop, y);
+        }
+        if (newTop > top) out.set(newTop, st[t.block(tile, i, x, top, z)]); // the raised ground gets the column's own surface block
     }
 
     @Override

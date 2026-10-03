@@ -409,6 +409,77 @@ final class SelfTest {
             }
         }
 
+        // 11. the buildings far terrain shows are the buildings the chunk gets: a village near the test area,
+        // worked out without generating it (where it starts, its pieces, the ground under them), then
+        // compared block by block with the real chunks.
+        if (server.getWorldData().worldGenOptions().generateStructures()) {
+            var villages = level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.STRUCTURE_SET)
+                .getHolder(net.minecraft.world.level.levelgen.structure.BuiltinStructureSets.VILLAGES);
+            if (villages.isPresent() && villages.get().value().placement()
+                instanceof net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStructurePlacement spread) {
+                java.util.Set<net.minecraft.world.level.levelgen.structure.Structure> kinds = new java.util.HashSet<>();
+                villages.get().value().structures().forEach(e -> kinds.add(e.structure().value()));
+                double[] at = new double[2];
+                t.projection.forward(139.5, 35.5, at);
+                int acx = (int) at[0] >> 4, acz = (int) at[1] >> 4, sp = spread.spacing();
+                LodTrees lod = new LodTrees(level, gen);
+                net.minecraft.world.level.levelgen.structure.StructureStart village = null;
+                search:
+                for (int r = 0; r <= 4; r++) { // regions in rings around the test area
+                    for (int rz = -r; rz <= r; rz++) {
+                        for (int rx = -r; rx <= r; rx++) {
+                            if (Math.max(Math.abs(rx), Math.abs(rz)) != r) continue;
+                            net.minecraft.world.level.ChunkPos c = spread.getPotentialStructureChunk(level.getSeed(), acx + rx * sp, acz + rz * sp);
+                            for (var e : lod.starts(c.x, c.z).entrySet()) {
+                                if (kinds.contains(e.getKey()) && e.getValue().isValid()) {
+                                    village = e.getValue();
+                                    break search;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (village == null) {
+                    notes.add("buildings: no village near the test area");
+                } else {
+                    var box = village.getBoundingBox();
+                    // the chunks of the village with the most building blocks worked out
+                    List<long[]> chunks = new ArrayList<>();
+                    for (int cz = box.minZ() >> 4; cz <= box.maxZ() >> 4; cz++) {
+                        for (int cx = box.minX() >> 4; cx <= box.maxX() >> 4; cx++) {
+                            long n = lod.structureBlocks(cx, cz).values().stream().filter(st -> !st.isAir()).count();
+                            if (n > 0) chunks.add(new long[] {cx, cz, n});
+                        }
+                    }
+                    chunks.sort((a, b) -> Long.compare(b[2], a[2]));
+                    long same = 0, all = 0;
+                    StringBuilder line = new StringBuilder();
+                    for (long[] c : chunks.subList(0, Math.min(4, chunks.size()))) {
+                        int cx = (int) c[0], cz = (int) c[1];
+                        long t0 = System.nanoTime();
+                        java.util.Map<Long, net.minecraft.world.level.block.state.BlockState> sim = lod.structureBlocks(cx, cz);
+                        long ms = (System.nanoTime() - t0) / 1_000_000;
+                        level.getChunk(cx, cz); // the real one
+                        int chunkSame = 0, chunkAll = 0;
+                        for (var e : sim.entrySet()) {
+                            if (e.getValue().isAir()) continue;
+                            chunkAll++;
+                            if (level.getBlockState(BlockPos.of(e.getKey())).getBlock() == e.getValue().getBlock()) chunkSame++;
+                        }
+                        same += chunkSame;
+                        all += chunkAll;
+                        line.append(line.isEmpty() ? "" : "; ").append(String.format("%d,%d: %d of %d the same (%d ms)", cx, cz, chunkSame, chunkAll, ms));
+                    }
+                    String id = String.valueOf(level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.STRUCTURE)
+                        .getKey(village.getStructure()));
+                    notes.add("buildings: " + id + " at chunk " + village.getChunkPos() + ": " + line);
+                    if (all < 50 || same < all * 0.8) {
+                        errors.add("the buildings worked out for far terrain don't match the real village; seed " + level.getSeed());
+                    }
+                }
+            }
+        }
+
         // 8. with Distant Horizons: the LOD columns it gets from the terrain model pass its own checks
         if (AlosEarth.DISTANT_HORIZONS) {
             String problem = io.github.lazytive.alosearth.compat.DistantHorizonsEarth.check(level, gen, notes);

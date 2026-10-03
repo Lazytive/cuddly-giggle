@@ -134,7 +134,7 @@ jobs:
           sh scripts/ci-run-server.sh
           grep -iE "distant ?horizons|exception|error" run/logs/latest.log | grep -v "SQL update" | head -60 || true
           grep -q "far terrain saved for the overworld was cleared" run/logs/latest.log
-          grep -qx 2 run/world/data/alosearth-far-terrain.txt
+          grep -qx "$(grep -o 'FAR_TERRAIN_VERSION = [0-9]*' src/main/java/io/github/lazytive/alosearth/compat/DistantHorizonsEarth.java | grep -o '[0-9]*$')" run/world/data/alosearth-far-terrain.txt
           cat run/alosearth-selftest.txt
           grep -q "LOD chunks .* pass its checks" run/alosearth-selftest.txt
           grep -q "far terrain at any detail" run/alosearth-selftest.txt

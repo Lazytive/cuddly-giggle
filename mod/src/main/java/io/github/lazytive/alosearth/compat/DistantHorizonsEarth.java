@@ -22,6 +22,7 @@ import io.github.lazytive.alosearth.core.Terrain;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -224,7 +225,7 @@ public final class DistantHorizonsEarth {
      * (1: ground and a flat leaf canopy; 2: the real trees and plants), so far terrain that Distant
      * Horizons saved with an older version is rebuilt instead of kept forever.
      */
-    static final int FAR_TERRAIN_VERSION = 2;
+    static final int FAR_TERRAIN_VERSION = 3;
 
     /**
      * Before the levels load (so before Distant Horizons opens its database): if this ALOS Earth
@@ -325,9 +326,9 @@ public final class DistantHorizonsEarth {
         private final Map<Holder<Biome>, IDhApiBiomeWrapper> replaced = new ConcurrentHashMap<>();
         private volatile IDhApiBlockStateWrapper air;
         private final Map<BlockState, IDhApiBlockStateWrapper> wrappers = new ConcurrentHashMap<>();
-        /** The trees Minecraft will grow here, for near terrain, and each biome's canopy, for far. */
+        /** The buildings and trees Minecraft will put here, for near terrain, and each biome's canopy, for far. */
         final io.github.lazytive.alosearth.LodTrees trees;
-        /** Up to this detail level (1 column per 2^n blocks) far terrain shows the real trees. */
+        /** Up to this detail level (1 column per 2^n blocks) far terrain shows the real buildings and trees. */
         static final int EXACT_TREES = 2;
 
         /** Distant Horizons 3 and later (API 7.1): far-away terrain comes at whatever detail it needs. */
@@ -380,9 +381,9 @@ public final class DistantHorizonsEarth {
             int w = source.getWidthInDataColumns(), step = 1 << detail;
             int minY = level.getMinBuildHeight(), maxY = level.getMaxBuildHeight();
             Terrain.Tile far = detail == 0 ? null : t.far(x0, z0, step, w);
-            // near: the very trees the chunks will get; further out: each biome's own canopy
+            // near: the very buildings and trees the chunks will get; further out: each biome's own canopy
             LodTrees.Area area = null;
-            if (trees.hasTrees() && detail <= EXACT_TREES) {
+            if (trees.hasDecoration() && detail <= EXACT_TREES) {
                 area = trees.area(x0, z0, w * step);
                 trees.observe(area, x0, z0, w * step);
             }
@@ -397,7 +398,7 @@ public final class DistantHorizonsEarth {
                         int bx = x0 + x * step + step / 2, bz = z0 + z * step + step / 2, i = z * w + x;
                         int tx = bx, tz = bz;
                         LodTrees.Canopy canopy = null;
-                        if (area != null) { // the tallest tree column in this square stands for it
+                        if (area != null) { // the tallest tree (or building) column in this square stands for it
                             int best = Integer.MIN_VALUE;
                             for (int dz = 0; dz < step; dz++) {
                                 for (int dx = 0; dx < step; dx++) {
@@ -435,7 +436,7 @@ public final class DistantHorizonsEarth {
             int minY = level.getMinBuildHeight(), maxY = level.getMaxBuildHeight();
             DhApiChunk c = DhApiChunk.create(cx, cz, minY, maxY);
             Terrain.Tile tile = t.tileAt(cx << 4, cz << 4);
-            LodTrees.Area area = trees.hasTrees() ? trees.area(cx << 4, cz << 4, 16) : null;
+            LodTrees.Area area = trees.hasDecoration() ? trees.area(cx << 4, cz << 4, 16) : null;
             for (int lz = 0; lz < 16; lz++) {
                 for (int lx = 0; lx < 16; lx++) {
                     int x = (cx << 4) + lx, z = (cz << 4) + lz;
@@ -467,13 +468,18 @@ public final class DistantHorizonsEarth {
                 col.add(point(y + yOff, top + yOff, 0, block(solid(t.block(tile, i, x, top - 1, z))), biome));
                 y = top;
             }
-            int surfaceSky = water > top ? Math.max(0, 15 - (water - top)) : 15;
-            col.add(point(top + yOff, top + 1 + yOff, surfaceSky, block(solid(t.block(tile, i, x, top, z))), biome));
-            y = top + 1;
-
-            // above the ground: water, and the trees (as Minecraft will grow them, or the biome's canopy)
+            // above the ground: water, and the buildings and trees (as Minecraft will place them, or the biome's canopy)
             int[] ys = area == null ? null : LodTrees.heights(area, treeX, treeZ);
             BlockState[] st = area == null ? null : LodTrees.states(area, treeX, treeZ);
+            IDhApiBlockStateWrapper surface = block(solid(t.block(tile, i, x, top, z)));
+            if (ys != null) { // a path or a floor where the ground was
+                int at = Arrays.binarySearch(ys, top);
+                if (at >= 0 && !st[at].isAir()) surface = state(st[at]);
+            }
+            int surfaceSky = water > top ? Math.max(0, 15 - (water - top)) : 15;
+            col.add(point(top + yOff, top + 1 + yOff, surfaceSky, surface, biome));
+            y = top + 1;
+
             int crownLow = Integer.MAX_VALUE, crownTop = Integer.MIN_VALUE;
             IDhApiBlockStateWrapper crown = null;
             if (canopy != null) {
