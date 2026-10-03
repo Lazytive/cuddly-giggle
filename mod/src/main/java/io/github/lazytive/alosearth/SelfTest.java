@@ -356,97 +356,55 @@ final class SelfTest {
             }
         }
 
-        // 10. the trees far terrain shows are the trees the chunk gets: in a forest near the test area,
-        // worked out without generating it, then compared with the real chunk (logs and leaves)
+        // 10. the trees far terrain shows are the trees the chunk gets: in forest chunks near the test area,
+        // worked out without generating them, then compared with the real chunks (logs and leaves).
+        // Where neighbouring chunks' trees and plants meet, the order the real chunks happened to be
+        // decorated in decides what grows, and a tree that fails moves every later one in the chunk (they
+        // share one stream of random numbers): then the chunk has the same kind and amount of trees, in
+        // other places. That can't be known in advance, so: at least one of several chunks must come out
+        // exactly (which broken work-ahead never does), and the amount of trees must be right.
         {
             double[] at = new double[2];
             t.projection.forward(139.5, 35.5, at);
-            int w = 64, step = 32, x0 = (int) at[0] - w * step / 2, z0 = (int) at[1] - w * step / 2, best = -1;
+            int w = 64, step = 32, x0 = (int) at[0] - w * step / 2, z0 = (int) at[1] - w * step / 2;
             Terrain.Tile far = t.far(x0, z0, step, w);
-            double bestD = Double.MAX_VALUE;
-            for (int k = 0; k < w * w; k++) {
+            List<int[]> picks = new ArrayList<>();
+            Integer[] order = new Integer[w * w];
+            for (int k = 0; k < order.length; k++) order[k] = k;
+            java.util.Arrays.sort(order, java.util.Comparator.comparingDouble(c -> {
+                double ox = c % w - w / 2.0, oz = c / w - w / 2.0;
+                return ox * ox + oz * oz;
+            }));
+            for (int c : order) {
+                int k = c;
                 String b = Palette.BIOMES[far.biome[k]];
                 if (far.water[k] > far.top[k] || !(b.contains("forest") || b.contains("taiga") || b.contains("jungle"))) continue;
-                double dx = k % w - w / 2.0, dz = k / w - w / 2.0;
-                // an ordinary forest if there is one: in a dark forest's dense, wide trees, which chunk Minecraft
-                // happened to decorate first decides more of them (and that can't be known in advance)
-                if (b.equals("dark_forest")) dx += w;
-                if (dx * dx + dz * dz < bestD) {
-                    bestD = dx * dx + dz * dz;
-                    best = k;
-                }
+                int cx = (x0 + (k % w) * step + step / 2) >> 4, cz = (z0 + (k / w) * step + step / 2) >> 4;
+                if (picks.stream().anyMatch(q -> Math.abs(q[0] - cx) < 4 && Math.abs(q[1] - cz) < 4)) continue; // apart
+                picks.add(new int[] {cx, cz, k});
+                if (picks.size() == 6) break;
             }
-            if (best < 0) {
+            if (picks.isEmpty()) {
                 notes.add("trees: no forest near the test area");
             } else {
-                int cx = (x0 + (best % w) * step + step / 2) >> 4, cz = (z0 + (best / w) * step + step / 2) >> 4;
-                long t0 = System.nanoTime();
                 LodTrees lod = new LodTrees(level, gen);
-                LodTrees.Area area = lod.area(cx << 4, cz << 4, 16);
-                long simMs = (System.nanoTime() - t0) / 1_000_000;
-                for (int dz = -1; dz <= 1; dz++) {
-                    for (int dx = -1; dx <= 1; dx++) level.getChunk(cx + dx, cz + dz); // the real ones, with their neighbours' trees
+                int exact = 0;
+                long realAll = 0, simAll = 0;
+                StringBuilder line = new StringBuilder();
+                for (int[] pick : picks) {
+                    int[] r = compareTrees(level, gen, t, lod, pick[0], pick[1]);
+                    realAll += r[0];
+                    simAll += r[1];
+                    double inner = r[3] + r[4] == r[5] ? 1 : r[5] / (double) (r[3] + r[4] - r[5]);
+                    if (r[0] > 0 && inner >= 0.9) exact++;
+                    line.append(line.isEmpty() ? "" : "; ").append(String.format("%s %d,%d: %d real, %d worked out (%d ms), %.0f%% the same away from the edges",
+                        Palette.BIOMES[far.biome[pick[2]]], pick[0], pick[1], r[0], r[1], r[6], 100 * inner));
                 }
-                int real = 0, simulated = 0, both = 0, innerReal = 0, innerSim = 0, innerBoth = 0;
-                int realTrunks = 0, simTrunks = 0, bothTrunks = 0;
-                List<String> trunkNotes = new ArrayList<>();
-                for (int lz = 0; lz < 16; lz++) {
-                    for (int lx = 0; lx < 16; lx++) {
-                        int x = (cx << 4) + lx, z = (cz << 4) + lz;
-                        boolean inner = lx >= 4 && lx < 12 && lz >= 4 && lz < 12;
-                        java.util.Set<Integer> sim = new java.util.HashSet<>();
-                        int[] ys = LodTrees.heights(area, x, z);
-                        net.minecraft.world.level.block.state.BlockState[] st = LodTrees.states(area, x, z);
-                        int ground = t.top(x, z);
-                        if (ys != null) for (int k = 0; k < ys.length; k++) if (ys[k] > ground && LodTrees.isTreeBlock(st[k])) sim.add(ys[k]);
-                        int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
-                        for (int y = ground + 1; y < top; y++) {
-                            if (LodTrees.isTreeBlock(level.getBlockState(new BlockPos(x, y, z)))) {
-                                real++;
-                                if (sim.contains(y)) both++;
-                                if (inner) {
-                                    innerReal++;
-                                    if (sim.contains(y)) innerBoth++;
-                                }
-                            }
-                        }
-                        simulated += sim.size();
-                        if (inner) innerSim += sim.size();
-                        // trunks: a log just above the ground
-                        boolean realTrunk = level.getBlockState(new BlockPos(x, ground + 1, z)).is(net.minecraft.tags.BlockTags.LOGS);
-                        boolean simTrunk = ys != null && java.util.stream.IntStream.range(0, ys.length)
-                            .anyMatch(k -> ys[k] == ground + 1 && st[k].is(net.minecraft.tags.BlockTags.LOGS));
-                        if (realTrunk) realTrunks++;
-                        if (simTrunk) simTrunks++;
-                        if (realTrunk && simTrunk) bothTrunks++;
-                        if (realTrunk != simTrunk && trunkNotes.size() < 6) { // what's different there
-                            BlockPos g = new BlockPos(x, ground, z);
-                            trunkNotes.add(String.format("%d,%d %s: ground y %d is %s, above it %s, biome %s / worked out %s", x, z,
-                                realTrunk ? "real only" : "worked out only", ground,
-                                BuiltInRegistries.BLOCK.getKey(level.getBlockState(g).getBlock()).getPath(),
-                                BuiltInRegistries.BLOCK.getKey(level.getBlockState(g.above()).getBlock()).getPath(),
-                                level.getBiome(g.above()).unwrapKey().map(k -> k.location().getPath()).orElse("?"),
-                                lod.biomeAt(g.above()).unwrapKey().map(k -> k.location().getPath()).orElse("?")));
-                        }
-                    }
-                }
-                double match = real + simulated == both ? 1 : both / (double) (real + simulated - both);
-                double innerMatch = innerReal + innerSim == innerBoth ? 1 : innerBoth / (double) (innerReal + innerSim - innerBoth);
-                notes.add(String.format("trees: %s chunk %d,%d has %d log and leaf blocks, %d worked out in advance (%d ms), %.0f%% the same"
-                        + " (%.0f%% away from the chunk's edges); trunks %d real, %d worked out, %d in the same place",
-                    Palette.BIOMES[far.biome[best]], cx, cz, real, simulated, simMs, 100 * match, 100 * innerMatch,
-                    realTrunks, simTrunks, bothTrunks));
-                // Where neighbouring chunks' trees meet, the order the real chunks were decorated in decides
-                // which trees grow, and a tree that fails moves every later one of the chunk (they share one
-                // stream of random numbers), so whole chunks can come out differently. Broken work-ahead
-                // (wrong seed, order or feature) matches next to nothing.
-                if (real == 0 || match < 0.3) {
-                    errors.add("the trees worked out for far terrain don't match the real chunk");
-                    for (String n : trunkNotes) notes.add("trees: " + n);
-                    String refs = level.getChunk(cx, cz).getAllReferences().keySet().stream()
-                        .map(st -> level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.STRUCTURE).getKey(st))
-                        .map(String::valueOf).collect(java.util.stream.Collectors.joining(", "));
-                    notes.add("trees: structures reaching the chunk: " + (refs.isEmpty() ? "none" : refs) + "; seed " + level.getSeed());
+                notes.add("trees: " + line);
+                notes.add("trees: " + exact + " of " + picks.size() + " forest chunks exactly as worked out; " + simAll
+                    + " log and leaf blocks worked out for " + realAll + " real");
+                if (exact == 0 || realAll == 0 || simAll < realAll * 0.6 || simAll > realAll * 1.6) {
+                    errors.add("the trees worked out for far terrain don't match the real chunks; seed " + level.getSeed());
                 }
             }
         }
@@ -460,5 +418,44 @@ final class SelfTest {
         // 4. commands are registered
         if (server.getCommands().getDispatcher().getRoot().getChild("earth") == null) errors.add("/earth missing");
         if (Palette.BLOCKS.length != gen.states().length) errors.add("block palette");
+    }
+
+    /**
+     * Compares the trees worked out for chunk (cx, cz) with the real chunk (generated here, with its
+     * neighbours): real, worked out and shared log/leaf blocks, the same away from the chunk's edges, and ms.
+     */
+    private static int[] compareTrees(ServerLevel level, EarthChunkGenerator gen, Terrain t, LodTrees lod, int cx, int cz) {
+        long t0 = System.nanoTime();
+        LodTrees.Area area = lod.area(cx << 4, cz << 4, 16);
+        int ms = (int) ((System.nanoTime() - t0) / 1_000_000);
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dx = -1; dx <= 1; dx++) level.getChunk(cx + dx, cz + dz); // the real ones, with their neighbours' trees
+        }
+        int real = 0, simulated = 0, both = 0, innerReal = 0, innerSim = 0, innerBoth = 0;
+        for (int lz = 0; lz < 16; lz++) {
+            for (int lx = 0; lx < 16; lx++) {
+                int x = (cx << 4) + lx, z = (cz << 4) + lz;
+                boolean inner = lx >= 4 && lx < 12 && lz >= 4 && lz < 12;
+                java.util.Set<Integer> sim = new java.util.HashSet<>();
+                int[] ys = LodTrees.heights(area, x, z);
+                net.minecraft.world.level.block.state.BlockState[] st = LodTrees.states(area, x, z);
+                int ground = t.top(x, z);
+                if (ys != null) for (int k = 0; k < ys.length; k++) if (ys[k] > ground && LodTrees.isTreeBlock(st[k])) sim.add(ys[k]);
+                int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, x, z);
+                for (int y = ground + 1; y < top; y++) {
+                    if (LodTrees.isTreeBlock(level.getBlockState(new BlockPos(x, y, z)))) {
+                        real++;
+                        if (sim.contains(y)) both++;
+                        if (inner) {
+                            innerReal++;
+                            if (sim.contains(y)) innerBoth++;
+                        }
+                    }
+                }
+                simulated += sim.size();
+                if (inner) innerSim += sim.size();
+            }
+        }
+        return new int[] {real, simulated, both, innerReal, innerSim, innerBoth, ms};
     }
 }
