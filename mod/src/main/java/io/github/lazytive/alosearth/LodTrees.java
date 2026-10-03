@@ -140,6 +140,11 @@ public final class LodTrees {
         return out;
     }
 
+    /** The biome the trees see at a position (as decoration does: Minecraft's biome blending included). */
+    public Holder<Biome> biomeAt(BlockPos pos) {
+        return biomes.getBiome(pos);
+    }
+
     public static long column(int x, int z) {
         return ((long) x << 32) ^ (z & 0xffffffffL);
     }

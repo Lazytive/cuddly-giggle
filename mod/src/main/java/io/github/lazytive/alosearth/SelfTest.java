@@ -386,6 +386,7 @@ final class SelfTest {
                 }
                 int real = 0, simulated = 0, both = 0, innerReal = 0, innerSim = 0, innerBoth = 0;
                 int realTrunks = 0, simTrunks = 0, bothTrunks = 0;
+                List<String> trunkNotes = new ArrayList<>();
                 for (int lz = 0; lz < 16; lz++) {
                     for (int lx = 0; lx < 16; lx++) {
                         int x = (cx << 4) + lx, z = (cz << 4) + lz;
@@ -415,6 +416,15 @@ final class SelfTest {
                         if (realTrunk) realTrunks++;
                         if (simTrunk) simTrunks++;
                         if (realTrunk && simTrunk) bothTrunks++;
+                        if (realTrunk != simTrunk && trunkNotes.size() < 6) { // what's different there
+                            BlockPos g = new BlockPos(x, ground, z);
+                            trunkNotes.add(String.format("%d,%d %s: ground y %d is %s, above it %s, biome %s / worked out %s", x, z,
+                                realTrunk ? "real only" : "worked out only", ground,
+                                BuiltInRegistries.BLOCK.getKey(level.getBlockState(g).getBlock()).getPath(),
+                                BuiltInRegistries.BLOCK.getKey(level.getBlockState(g.above()).getBlock()).getPath(),
+                                level.getBiome(g.above()).unwrapKey().map(k -> k.location().getPath()).orElse("?"),
+                                lod.biomeAt(g.above()).unwrapKey().map(k -> k.location().getPath()).orElse("?")));
+                        }
                     }
                 }
                 double match = real + simulated == both ? 1 : both / (double) (real + simulated - both);
@@ -423,7 +433,14 @@ final class SelfTest {
                         + " (%.0f%% away from the chunk's edges); trunks %d real, %d worked out, %d in the same place",
                     Palette.BIOMES[far.biome[best]], cx, cz, real, simulated, simMs, 100 * match, 100 * innerMatch,
                     realTrunks, simTrunks, bothTrunks));
-                if (real == 0 || match < 0.6) errors.add("the trees worked out for far terrain don't match the real chunk");
+                if (real == 0 || match < 0.6) {
+                    errors.add("the trees worked out for far terrain don't match the real chunk");
+                    for (String n : trunkNotes) notes.add("trees: " + n);
+                    String refs = level.getChunk(cx, cz).getAllReferences().keySet().stream()
+                        .map(st -> level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.STRUCTURE).getKey(st))
+                        .map(String::valueOf).collect(java.util.stream.Collectors.joining(", "));
+                    notes.add("trees: structures reaching the chunk: " + (refs.isEmpty() ? "none" : refs) + "; seed " + level.getSeed());
+                }
             }
         }
 
