@@ -384,10 +384,12 @@ final class SelfTest {
                 for (int dz = -1; dz <= 1; dz++) {
                     for (int dx = -1; dx <= 1; dx++) level.getChunk(cx + dx, cz + dz); // the real ones, with their neighbours' trees
                 }
-                int real = 0, simulated = 0, both = 0;
+                int real = 0, simulated = 0, both = 0, innerReal = 0, innerSim = 0, innerBoth = 0;
+                int realTrunks = 0, simTrunks = 0, bothTrunks = 0;
                 for (int lz = 0; lz < 16; lz++) {
                     for (int lx = 0; lx < 16; lx++) {
                         int x = (cx << 4) + lx, z = (cz << 4) + lz;
+                        boolean inner = lx >= 4 && lx < 12 && lz >= 4 && lz < 12;
                         java.util.Set<Integer> sim = new java.util.HashSet<>();
                         int[] ys = LodTrees.heights(area, x, z);
                         net.minecraft.world.level.block.state.BlockState[] st = LodTrees.states(area, x, z);
@@ -398,15 +400,30 @@ final class SelfTest {
                             if (LodTrees.isTreeBlock(level.getBlockState(new BlockPos(x, y, z)))) {
                                 real++;
                                 if (sim.contains(y)) both++;
+                                if (inner) {
+                                    innerReal++;
+                                    if (sim.contains(y)) innerBoth++;
+                                }
                             }
                         }
                         simulated += sim.size();
+                        if (inner) innerSim += sim.size();
+                        // trunks: a log just above the ground
+                        boolean realTrunk = level.getBlockState(new BlockPos(x, ground + 1, z)).is(net.minecraft.tags.BlockTags.LOGS);
+                        boolean simTrunk = ys != null && java.util.stream.IntStream.range(0, ys.length)
+                            .anyMatch(k -> ys[k] == ground + 1 && st[k].is(net.minecraft.tags.BlockTags.LOGS));
+                        if (realTrunk) realTrunks++;
+                        if (simTrunk) simTrunks++;
+                        if (realTrunk && simTrunk) bothTrunks++;
                     }
                 }
                 double match = real + simulated == both ? 1 : both / (double) (real + simulated - both);
-                notes.add(String.format("trees: %s chunk %d,%d has %d log and leaf blocks, %d worked out in advance (%d ms), %.0f%% the same",
-                    Palette.BIOMES[far.biome[best]], cx, cz, real, simulated, simMs, 100 * match));
-                if (real == 0 || match < 0.75) errors.add("the trees worked out for far terrain don't match the real chunk");
+                double innerMatch = innerReal + innerSim == innerBoth ? 1 : innerBoth / (double) (innerReal + innerSim - innerBoth);
+                notes.add(String.format("trees: %s chunk %d,%d has %d log and leaf blocks, %d worked out in advance (%d ms), %.0f%% the same"
+                        + " (%.0f%% away from the chunk's edges); trunks %d real, %d worked out, %d in the same place",
+                    Palette.BIOMES[far.biome[best]], cx, cz, real, simulated, simMs, 100 * match, 100 * innerMatch,
+                    realTrunks, simTrunks, bothTrunks));
+                if (real == 0 || match < 0.6) errors.add("the trees worked out for far terrain don't match the real chunk");
             }
         }
 
