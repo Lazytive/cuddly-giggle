@@ -1,4 +1,4 @@
-# ALOS Earth (Fabric and NeoForge mod, beta)
+# ALOS Earth (NeoForge mod, beta)
 
 A **world type** that generates the whole Earth at about **1 block ≈ 30 m**
 (or **1:1**, see below), on the fly, from JAXA's ALOS AW3D30 elevation data. The world is a **globe**:
@@ -76,13 +76,11 @@ explored chunks still match the old ones.
 
 ## Install
 
-* **Needs:** Minecraft **1.21.1**, and either Fabric Loader with Fabric API,
-  or NeoForge 21.1.
-* **Where the mod goes:** drop the jar into `mods/`: `alos-earth.jar` for
-  Fabric, `alos-earth-neoforge.jar` for NeoForge (both are on the
-  [beta release](https://github.com/Lazytive/cuddly-giggle/releases/tag/alos-earth-beta)).
-  Everything works the same on both, except the see‑through seams, which
-  need Immersive Portals (Fabric only).
+* **Needs:** Minecraft **1.21.1** with **NeoForge 21.1**.
+* **Where the mod goes:** drop `alos-earth-neoforge.jar` from the
+  [beta release](https://github.com/Lazytive/cuddly-giggle/releases/tag/alos-earth-beta)
+  into `mods/`. (Earlier betas also came for Fabric; only NeoForge is built
+  now.)
 * **Servers:** the mod only has to be installed on the server; players
   can join with an unmodded client.
 * **Single player:** "Create New World" starts on **ALOS Earth (1:10)**,
@@ -176,7 +174,7 @@ world border).
 Every build that passes CI is published as the
 [`alos-earth-beta` release](https://github.com/Lazytive/cuddly-giggle/releases/tag/alos-earth-beta),
 always at the same link:
-<https://github.com/Lazytive/cuddly-giggle/releases/download/alos-earth-beta/alos-earth.jar>
+<https://github.com/Lazytive/cuddly-giggle/releases/download/alos-earth-beta/alos-earth-neoforge.jar>
 
 To have Prism install and update it on every launch:
 
@@ -189,8 +187,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "try { [Net.ServicePointM
 ```
 
 On each launch it fetches [`tools/update-alos-earth.ps1`](tools/update-alos-earth.ps1)
-from the release and runs it. The script puts the newest `alos-earth.jar` into
-the instance's `mods` folder, removing older copies. If there's no internet
+from the release and runs it. The script puts the newest `alos-earth-neoforge.jar`
+into the instance's `mods` folder, removing older copies (including an old
+Fabric `alos-earth.jar`). If there's no internet
 it leaves the current jar alone and the game starts normally.
 
 ## Data
@@ -272,10 +271,11 @@ The Earth is projected onto the six faces of a cube, unfolded like this
   what you'll find.
 * **No loading pause:** chunks on the far side are loaded as you approach.
 
-**Seamless edges with Immersive Portals (optional).** Install
-[Immersive Portals](https://modrinth.com/mod/immersiveportals) for 1.21.1
-alongside ALOS Earth, on both the client and the server. Every seam then
-becomes a see‑through portal the height of the world:
+**Seamless edges with Immersive Portals (Fabric only, not in the NeoForge
+build).** With [Immersive Portals](https://modrinth.com/mod/immersiveportals)
+installed alongside the old Fabric version of ALOS Earth, on both the client
+and the server, every seam becomes a see‑through portal the height of the
+world:
 * you see across the edge to the other side;
 * you walk over it with no teleport jump;
 * your heading carries on.
@@ -346,9 +346,9 @@ Known limits:
 * **Lighting:** the 1:10 (default), 1:5 and max worlds are much taller than
   vanilla, so lighting is a big part of the cost of new chunks.
   [ScalableLux](https://modrinth.com/mod/scalablelux) makes it a lot faster.
-* **Tested with** (in CI, on a real server): Immersive Portals, Distant
-  Horizons, C2ME (multi‑threaded chunk generation) and Lithium on Fabric;
-  the whole self‑test also runs on a NeoForge server.
+* **Tested with** (in CI, on a real NeoForge server): Distant Horizons,
+  DH SeedGen, Lithium and C2ME (multi‑threaded chunk generation), where they
+  have NeoForge releases for 1.21.1.
 * **Mods that change biome temperature** (seasons, climate mods): ALOS
   Earth's snow‑by‑altitude change is optional, so the game still starts if
   another mod replaces the same code. Snow then follows that mod.
@@ -359,13 +359,12 @@ Known limits:
 ## Building
 
 ```bash
-./gradlew build                # Fabric (needs JDK 21); the jar lands in build/libs/
-./gradlew -p neoforge build    # NeoForge; the jar lands in neoforge/build/libs/
+./gradlew -p neoforge build    # needs JDK 21; the jar lands in neoforge/build/libs/
 ```
 
-Both versions share the code in `src/main`; the loader-specific parts are
-the entry points (`fabric/` here, `neoforge/src` for NeoForge) and
-`Platform`.
+The mod's code is in `src/main`; the NeoForge entry point and metadata are in
+`neoforge/src`. (The Fabric entry points in `fabric/` and the Fabric build
+are no longer built.)
 
 The terrain core (`io.github.lazytive.alosearth.core`) is plain Java.
 `scripts/core-test.sh` runs its tests with only a JDK, after

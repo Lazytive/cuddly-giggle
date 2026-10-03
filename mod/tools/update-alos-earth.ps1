@@ -1,7 +1,8 @@
 # Keeps the ALOS Earth mod in a Minecraft "mods" folder up to date.
 #
-# Downloads the latest beta build published by CI and installs it as
-# alos-earth.jar, replacing any older copy. If you are offline or GitHub is
+# Downloads the latest beta build published by CI (NeoForge) and installs it as
+# alos-earth-neoforge.jar, replacing any older copy (including the old Fabric
+# alos-earth.jar). If you are offline or GitHub is
 # unreachable it leaves the current copy alone and still exits 0, so it never
 # blocks a launch.
 #
@@ -18,8 +19,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$url = "https://github.com/Lazytive/cuddly-giggle/releases/download/alos-earth-beta/alos-earth.jar"
-$target = Join-Path $ModsDir "alos-earth.jar"
+$url = "https://github.com/Lazytive/cuddly-giggle/releases/download/alos-earth-beta/alos-earth-neoforge.jar"
+$target = Join-Path $ModsDir "alos-earth-neoforge.jar"
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "alos-earth-download.jar"
 
 try {
@@ -34,8 +35,8 @@ try {
         Remove-Item $tmp -Force
         exit 0
     }
-    # remove any other copies (e.g. alos-earth-0.1.0-beta.jar installed by hand)
-    Get-ChildItem -Path $ModsDir -Filter "alos-earth*.jar" | Where-Object { $_.Name -ne "alos-earth.jar" } |
+    # remove any other copies (e.g. alos-earth-0.1.0-beta.jar installed by hand, or the old Fabric alos-earth.jar)
+    Get-ChildItem -Path $ModsDir -Filter "alos-earth*.jar" | Where-Object { $_.Name -ne "alos-earth-neoforge.jar" } |
         Remove-Item -Force
     Move-Item -Force $tmp $target
     Write-Host "ALOS Earth updated -> $target"

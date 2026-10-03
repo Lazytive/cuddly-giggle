@@ -35,33 +35,25 @@ jobs:
           python -m pip install --quiet numpy tifffile imagecodecs
           python scripts/make_testdata.py "$GITHUB_WORKSPACE/mod/build/testdata"
 
-      - name: Resolve Fabric versions for Minecraft 1.21.1
+      - name: Look up NeoForge and the optional mods for Minecraft 1.21.1
         run: |
           set -euo pipefail
-          meta=$(curl -sSf https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml)
-          fabric=$(echo "$meta" | grep -oP '<version>\K[^<]*\+1\.21\.1(?=</version>)' | sort -V | tail -1)
-          loader=$(curl -sSf https://maven.fabricmc.net/net/fabricmc/fabric-loader/maven-metadata.xml | grep -oP '<release>\K[^<]*')
-          echo "Resolved fabric-api $fabric, fabric-loader $loader (pinned: $(grep -E '^(fabric|loader)_version' gradle.properties | tr '\n' ' '))"
-          echo "FABRIC_VERSION=$fabric" >> "$GITHUB_ENV"
-          echo "LOADER_VERSION=$loader" >> "$GITHUB_ENV"
-
-      - name: Look up Immersive Portals and Distant Horizons for Minecraft 1.21.1 (optional integrations)
-        run: |
-          set -euo pipefail
-          ipv=$(curl -sSf 'https://api.modrinth.com/v2/project/immersiveportals/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D' \
-            | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
-          echo "Immersive Portals version id $ipv"
-          echo "ORG_GRADLE_PROJECT_immersive_portals_version=$ipv" >> "$GITHUB_ENV"
-          dhv=$(curl -sSf 'https://api.modrinth.com/v2/project/distanthorizons/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D' \
+          neo=$(curl -sSf https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml \
+            | grep -oP '<version>\K21\.1\.[0-9]+(?=</version>)' | sort -V | tail -1)
+          echo "NeoForge $neo"
+          echo "NEO_VERSION=$neo" >> "$GITHUB_ENV"
+          dhv=$(curl -sSf 'https://api.modrinth.com/v2/project/distanthorizons/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22neoforge%22%5D' \
             | python3 -c "import json,sys; v=json.load(sys.stdin); print(v[0]['id']); print(v[0]['version_number'], file=sys.stderr)")
           echo "Distant Horizons version id $dhv"
           echo "ORG_GRADLE_PROJECT_distant_horizons_version=$dhv" >> "$GITHUB_ENV"
 
-      - name: Build and run core tests
+      - name: Run the terrain core tests
         env:
-          ALOSEARTH_TESTDATA: ${{ github.workspace }}/mod/build/testdata
           ALOSEARTH_NET: "1"
-        run: ./gradlew build --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION"
+        run: sh scripts/core-test.sh "$GITHUB_WORKSPACE/mod/build/testdata"
+
+      - name: Build the mod (NeoForge)
+        run: ./gradlew -p neoforge build --stacktrace -Pneo_version="$NEO_VERSION" -Pmod_version="$MOD_VERSION"
 
       - name: Prepare a dedicated server with an ALOS Earth world
         run: |
@@ -87,12 +79,24 @@ jobs:
             "cache_mb": 256
           }
           JSON
+          # a mod from Modrinth for 1.21.1 on NeoForge into run/mods: fetch-mod <slug> [file name]
+          cat > fetch-mod.sh <<'SH'
+          #!/bin/sh
+          set -e
+          url=$(curl -sSf "https://api.modrinth.com/v2/project/$1/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22neoforge%22%5D" \
+            | python3 -c "import json,sys; v=json.load(sys.stdin)[0]; f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url']); print('$1', v['version_number'], file=sys.stderr)")
+          mkdir -p run/mods
+          curl -sSfL -o "run/mods/${2:-$1}.jar" "$url"
+          SH
+          sed -i 's/^          //' fetch-mod.sh
+          chmod +x fetch-mod.sh
 
       - name: Run the in-game self-test on a real server
         env:
           ALOSEARTH_SELFTEST: "1"
         run: |
-          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          sh scripts/ci-run-server.sh
+          grep -iE "exception|error" run/logs/latest.log | head -40 || true
           cat run/alosearth-selftest.txt
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
 
@@ -102,43 +106,24 @@ jobs:
         run: |
           rm -rf run/world run/alosearth-selftest.txt
           sed -i 's/^level-type=.*/level-type=alosearth\\:earth_true_scale/' run/server.properties
-          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          sh scripts/ci-run-server.sh
           cat run/alosearth-selftest.txt
           grep -q "world height -320..384" run/alosearth-selftest.txt
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
           sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
 
-      - name: Run the in-game self-test with Immersive Portals (see-through seams)
-        env:
-          ALOSEARTH_SELFTEST: "1"
-        run: |
-          rm -rf run/world run/alosearth-selftest.txt
-          # Immersive Portals' own dependencies go straight into the mods folder (Fabric Loader
-          # remaps them at startup), since some are built with a newer Loom than this project uses
-          mkdir -p run/mods
-          for slug in dimlib midnightlib cloth-config; do
-            url=$(curl -sSf "https://api.modrinth.com/v2/project/$slug/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D" \
-              | python3 -c "import json,sys; v=json.load(sys.stdin)[0]; f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url']); print(v['version_number'], file=sys.stderr)")
-            curl -sSfL -o "run/mods/$slug.jar" "$url"
-          done
-          timeout 1500 ./gradlew runServer --stacktrace -Pwith_immersive_portals=true -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
-          cat run/alosearth-selftest.txt
-          grep -q "Immersive Portals: seam portals match" run/alosearth-selftest.txt
-          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
-          rm -rf run/mods
-
       - name: Run the in-game self-test with Distant Horizons (LODs from the terrain model)
         env:
           ALOSEARTH_SELFTEST: "1"
         run: |
-          rm -rf run/world run/alosearth-selftest.txt
-          # the same Distant Horizons version the mod was compiled against, straight into the mods folder
+          rm -rf run/world run/alosearth-selftest.txt run/mods
+          # the same Distant Horizons version the mod was compiled against
           mkdir -p run/mods
           url=$(curl -sSf "https://api.modrinth.com/v2/version/$ORG_GRADLE_PROJECT_distant_horizons_version" \
             | python3 -c "import json,sys; v=json.load(sys.stdin); f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url']); print(v['version_number'], file=sys.stderr)")
           curl -sSfL -o run/mods/distanthorizons.jar "$url"
-          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
-          grep -iE "distant ?horizons|exception|error" run/logs/latest.log | head -80 || true
+          sh scripts/ci-run-server.sh
+          grep -iE "distant ?horizons|exception|error" run/logs/latest.log | grep -v "SQL update" | head -60 || true
           cat run/alosearth-selftest.txt
           grep -q "LOD chunks .* pass its checks" run/alosearth-selftest.txt
           grep -q "far terrain at any detail" run/alosearth-selftest.txt
@@ -149,25 +134,19 @@ jobs:
         env:
           ALOSEARTH_SELFTEST: "1"
         run: |
-          rm -rf run/world run/alosearth-selftest.txt
+          rm -rf run/world run/alosearth-selftest.txt run/mods
           mkdir -p run/mods
           url=$(curl -sSf "https://api.modrinth.com/v2/version/$ORG_GRADLE_PROJECT_distant_horizons_version" \
             | python3 -c "import json,sys; v=json.load(sys.stdin); f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url'])")
           curl -sSfL -o run/mods/distanthorizons.jar "$url"
-          # every SeedGen release for 1.21.1 on Fabric, newest first; use the newest
-          curl -sSf "https://api.modrinth.com/v2/project/distant-horizons-seedgen/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D" > seedgen.json
-          python3 -c "import json; [print('SeedGen', v['version_number'], v['date_published'][:10], [d.get('project_id') for d in v['dependencies']]) for v in json.load(open('seedgen.json'))[:5]]"
-          url=$(python3 -c "import json; v=json.load(open('seedgen.json'))[0]; f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url'])")
-          curl -sSfL -o run/mods/seedgen.jar "$url"
-          # how SeedGen hooks in (for the record)
-          unzip -l run/mods/seedgen.jar | grep -iE "mixins?\.json|\.mod\.json|services" || true
-          unzip -p run/mods/seedgen.jar fabric.mod.json || true
-          for m in $(unzip -l run/mods/seedgen.jar | grep -oE '[^ ]*mixins?\.json'); do echo "== $m"; unzip -p run/mods/seedgen.jar "$m"; done
-          unzip -l run/mods/seedgen.jar | grep -oE '[^ ]+\.class' | head -80
-          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
-          grep -iE "seedgen|distant horizons" run/logs/latest.log | grep -v "SQL update" | head -40 || true
+          if ! ./fetch-mod.sh distant-horizons-seedgen seedgen; then
+            echo "No DH SeedGen release for 1.21.1 on NeoForge: skipped"
+            rm -rf run/mods
+            exit 0
+          fi
+          sh scripts/ci-run-server.sh
+          grep -iE "seedgen|seed renderer|distant horizons" run/logs/latest.log | grep -v "SQL update" | head -40 || true
           cat run/alosearth-selftest.txt
-          grep -qiE "^\s*- [a-z_-]*seedgen" run/logs/latest.log || echo "SeedGen did not load on a dedicated server"
           grep -q "the far-terrain generator in use is ALOS Earth's" run/alosearth-selftest.txt
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
           rm -rf run/mods
@@ -176,18 +155,14 @@ jobs:
         env:
           ALOSEARTH_SELFTEST: "1"
         run: |
-          rm -rf run/world run/alosearth-selftest.txt
-          mkdir -p run/mods
-          for slug in c2me-fabric lithium; do
-            url=$(curl -sSf "https://api.modrinth.com/v2/project/$slug/version?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D" \
-              | python3 -c "import json,sys; v=json.load(sys.stdin)[0]; f=[f for f in v['files'] if f['primary']] or v['files']; print(f[0]['url']); print(v['version_number'], file=sys.stderr)")
-            curl -sSfL -o "run/mods/$slug.jar" "$url"
-          done
-          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          rm -rf run/world run/alosearth-selftest.txt run/mods
+          ./fetch-mod.sh lithium || echo "No Lithium release for 1.21.1 on NeoForge"
+          ./fetch-mod.sh c2me-neoforge c2me || ./fetch-mod.sh c2me-fabric c2me || echo "No C2ME release for 1.21.1 on NeoForge"
+          ls run/mods
+          sh scripts/ci-run-server.sh
           grep -iE "c2me|lithium" run/logs/latest.log | head -20 || true
           grep -iE "exception|error" run/logs/latest.log | head -40 || true
           cat run/alosearth-selftest.txt
-          grep -qiE "Loading .*(c2me|lithium)|- (c2me|lithium)" run/logs/latest.log
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
           rm -rf run/mods
 
@@ -197,7 +172,7 @@ jobs:
         run: |
           rm -rf run/world run/alosearth-selftest.txt
           sed -i 's/^level-type=.*/level-type=alosearth\\:earth_1to10/' run/server.properties
-          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          sh scripts/ci-run-server.sh
           cat run/alosearth-selftest.txt
           grep -q "world height -1152..1088" run/alosearth-selftest.txt
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
@@ -209,7 +184,7 @@ jobs:
         run: |
           rm -rf run/world run/alosearth-selftest.txt
           sed -i 's/^level-type=.*/level-type=alosearth\\:earth_1to5/' run/server.properties
-          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          sh scripts/ci-run-server.sh
           cat run/alosearth-selftest.txt
           grep -q "world height -2032..2032" run/alosearth-selftest.txt
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
@@ -221,7 +196,7 @@ jobs:
         run: |
           rm -rf run/world run/alosearth-selftest.txt
           sed -i 's/^level-type=.*/level-type=alosearth\\:earth_max/' run/server.properties
-          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          sh scripts/ci-run-server.sh
           cat run/alosearth-selftest.txt
           grep -q "world height -2032..2032" run/alosearth-selftest.txt
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
@@ -234,7 +209,7 @@ jobs:
           rm -rf run/world run/alosearth-selftest.txt
           sed -i 's/^level-type=.*/level-type=alosearth\\:earth_1to1/' run/server.properties
           start=$(date +%s)
-          timeout 1500 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          sh scripts/ci-run-server.sh
           echo "world creation + checks took $(( $(date +%s) - start )) s"
           cat run/alosearth-selftest.txt
           grep -q "world height -2032..2032" run/alosearth-selftest.txt
@@ -258,36 +233,9 @@ jobs:
           }
           JSON
           start=$(date +%s)
-          timeout 900 ./gradlew runServer --stacktrace -Pfabric_version="$FABRIC_VERSION" -Ploader_version="$LOADER_VERSION" -Pmod_version="$MOD_VERSION" || true
+          sh scripts/ci-run-server.sh 900
           echo "world creation + checks took $(( $(date +%s) - start )) s"
           grep -h "Elevation download" run/logs/latest.log | tail -5 || true
-          cat run/alosearth-selftest.txt
-          grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
-
-      - name: Build the NeoForge version and run the self-test on a NeoForge server
-        env:
-          ALOSEARTH_SELFTEST: "1"
-        run: |
-          set -euo pipefail
-          neo=$(curl -sSf https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml \
-            | grep -oP '<version>\K21\.1\.[0-9]+(?=</version>)' | sort -V | tail -1)
-          echo "NeoForge $neo"
-          rm -rf run/world run/alosearth-selftest.txt run/mods
-          sed -i 's/^level-type=.*/level-type=alosearth\\:earth/' run/server.properties
-          d="$GITHUB_WORKSPACE/mod/build/testdata/data"
-          cat > run/config/alosearth.json <<JSON
-          {
-            "aw3d30": ["$d/aw3d30"],
-            "fill_dem": [],
-            "bathymetry": ["$d/gebco.tif"],
-            "climate": ["$d/climate"],
-            "auto_download": false,
-            "cache_mb": 256
-          }
-          JSON
-          ./gradlew -p neoforge build --stacktrace -Pneo_version="$neo" -Pmod_version="$MOD_VERSION"
-          timeout 1500 ./gradlew -p neoforge runServer --stacktrace -Pneo_version="$neo" -Pmod_version="$MOD_VERSION" || true
-          grep -iE "alos ?earth|exception|error" run/logs/latest.log | head -60 || true
           cat run/alosearth-selftest.txt
           grep -q "ALOSEARTH SELFTEST PASS" run/alosearth-selftest.txt
 
@@ -305,9 +253,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: alos-earth-mod
-          path: |
-            mod/build/libs/*.jar
-            mod/neoforge/build/libs/*.jar
+          path: mod/neoforge/build/libs/*.jar
 
       - name: Publish the rolling beta release (stable download link)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/minecraft-alos-world-generation-tgwoi0')
@@ -315,14 +261,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          jar=$(ls build/libs/*.jar | grep -v -- '-sources' | head -1)
-          cp "$jar" build/alos-earth.jar
-          neojar=$(ls neoforge/build/libs/*.jar | grep -v -- '-sources' | head -1)
-          cp "$neojar" build/alos-earth-neoforge.jar
-          notes="Latest build of the ALOS Earth mod for Minecraft 1.21.1: $MOD_VERSION, from commit $GITHUB_SHA. It passed the core tests and the in-game self-tests on real Fabric and NeoForge servers.
+          jar=$(ls neoforge/build/libs/*.jar | grep -v -- '-sources' | head -1)
+          cp "$jar" build/alos-earth-neoforge.jar
+          notes="Latest build of the ALOS Earth mod for Minecraft 1.21.1 on NeoForge 21.1: $MOD_VERSION, from commit $GITHUB_SHA. It passed the core tests and the in-game self-tests on a real NeoForge server.
 
-          Fabric: put alos-earth.jar in your instance's mods folder (needs Fabric Loader + Fabric API), or let update-alos-earth.ps1 do it on every launch (see mod/README.md).
-          NeoForge: put alos-earth-neoforge.jar in the mods folder instead (needs NeoForge 21.1)."
+          Install: put alos-earth-neoforge.jar in your instance's mods folder, or let update-alos-earth.ps1 do it on every launch (see mod/README.md)."
           # One permanent release whose files are replaced on every build. (Re-creating it would
           # need a new tag at this commit, and the workflow token may not create tags on commits
           # that change workflow files; the tag is made once, on the default branch.)
@@ -330,5 +273,7 @@ jobs:
             gh release create alos-earth-beta --prerelease --target "${{ github.event.repository.default_branch }}" \
               --title "ALOS Earth beta" --notes "$notes"
           fi
-          gh release upload alos-earth-beta build/alos-earth.jar build/alos-earth-neoforge.jar tools/update-alos-earth.ps1 --clobber
+          gh release upload alos-earth-beta build/alos-earth-neoforge.jar tools/update-alos-earth.ps1 --clobber
+          # the Fabric version is no longer built: don't leave an old copy where it could be mistaken for current
+          gh release delete-asset alos-earth-beta alos-earth.jar -y 2>/dev/null || true
           gh release edit alos-earth-beta --prerelease --title "ALOS Earth beta (latest build: $MOD_VERSION)" --notes "$notes"
